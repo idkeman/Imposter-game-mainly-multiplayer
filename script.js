@@ -211,8 +211,17 @@ function bindGame() {
   const start=el("startBtn");
   if(!slider||!start) throw new Error("Game controls are missing from the page.");
 
-  slider.addEventListener("input",updatePlayerCount);
-  slider.addEventListener("change",updatePlayerCount);
+  const syncSlider = () => {
+    const value = Number(slider.value);
+    if (!Number.isFinite(value)) return;
+    state.players = Math.max(3, Math.min(20, Math.round(value)));
+    el("playerCountLabel").textContent = String(state.players);
+  };
+  slider.addEventListener("input", syncSlider, {passive:true});
+  slider.addEventListener("change", syncSlider, {passive:true});
+  slider.addEventListener("pointermove", syncSlider, {passive:true});
+  slider.addEventListener("keydown", syncSlider);
+  slider.addEventListener("keyup", syncSlider);
   start.addEventListener("click",startGame);
   el("readyBtn").addEventListener("click",revealRole);
   el("hideRoleBtn").addEventListener("click",nextPlayer);
@@ -222,6 +231,7 @@ function bindGame() {
   el("nextRoundBtn").addEventListener("click",resetGame);
   el("resetBtn").addEventListener("click",resetGame);
   updatePlayerCount();
+  slider.value = String(state.players);
 }
 
 function boot() {
