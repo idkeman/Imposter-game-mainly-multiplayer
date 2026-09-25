@@ -21,6 +21,7 @@ weather:expand("Rain|Snow|Wind|Cloud|Fog|Lightning|Thunder|Hurricane|Tornado|Hai
 holidays:expand("Christmas|Halloween|Thanksgiving|Birthday|Easter|Valentine|New Year|Fireworks|Parade|Costume|Gift|Turkey|Pumpkin|Santa|Reindeer|Snowman|Stocking|Ornament|Wreath|Candy|Chocolate|Easter egg|Easter bunny|Party|Cake|Candles|Balloons|Confetti|Graduation|Wedding".split("|"),"Family|Holiday|Annual|Winter|Summer|Spring|Fall|National|Religious|School|Birthday|Festival|Community|Traditional|Special"),
 };
 WORDS.mixed=[...new Set(Object.keys(WORDS).flatMap(k=>WORDS[k]))];Object.keys(WORDS).filter(k=>k!=="mixed").forEach(k=>WORDS.mixed.push(...WORDS[k]));
+
 const $ = id => document.getElementById(id);
 
 const state = {
@@ -32,209 +33,182 @@ const state = {
   roles: [],
   current: 0,
   voted: null,
-  timer: null,
-  timeLeft: 0
+  timer: null
 };
 
-const screens = ["setup","pass","role","play","vote","reveal"];
-
-function show(id) {
-  screens.forEach(screen => {
-    const el = $(screen);
-    if (el) el.classList.toggle("active", screen === id);
-  });
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
+  const screen = $(id);
+  if (screen) screen.classList.add("active");
   window.scrollTo(0, 0);
-}
-
-function getImposterHint(word) {
-  const hints = {
-    volcano:"Nature", pancake:"Breakfast", library:"Books", shark:"Ocean",
-    airport:"Travel", basketball:"Sport", rainbow:"Sky", popcorn:"Movies",
-    robot:"Machine", castle:"Fortress", camping:"Outdoors", guitar:"Music",
-    subway:"Transit", watermelon:"Fruit", fireworks:"Celebration", sushi:"Japanese",
-    hamburger:"Food", "ice cream":"Dessert", taco:"Mexican", spaghetti:"Pasta",
-    donut:"Sweet", pretzel:"Snack", pineapple:"Tropical", penguin:"Bird",
-    elephant:"Large", giraffe:"Tall", dolphin:"Marine", tiger:"Striped",
-    octopus:"Tentacles", kangaroo:"Hopping", butterfly:"Insect", crocodile:"Reptile",
-    owl:"Night", panda:"Bear", beach:"Sand", hospital:"Medicine", restaurant:"Dining",
-    desert:"Dry", mountain:"Climbing", backpack:"School", umbrella:"Rain",
-    camera:"Photos", bicycle:"Wheels", telescope:"Stars", toothbrush:"Teeth",
-    clock:"Time", pencil:"Writing", mirror:"Reflection", compass:"Direction",
-    swimming:"Water", dancing:"Music", fishing:"Fish", skateboarding:"Wheels",
-    cooking:"Kitchen", painting:"Art", singing:"Voice", hiking:"Trails",
-    bowling:"Pins", reading:"Books", thunderstorm:"Lightning", snowflake:"Winter",
-    ocean:"Water", waterfall:"Nature", forest:"Trees", sunset:"Evening",
-    tornado:"Storm", moon:"Night", glacier:"Ice", river:"Water", textbook:"School",
-    locker:"Storage", calculator:"Math", teacher:"School", cafeteria:"Food",
-    recess:"Break", homework:"School", "science lab":"Science", gym:"Exercise",
-    soccer:"Sport", football:"Sport", baseball:"Sport", tennis:"Sport",
-    volleyball:"Sport", hockey:"Sport", golf:"Sport", boxing:"Sport",
-    wrestling:"Sport", surfing:"Ocean", skiing:"Winter", archery:"Target",
-    cinema:"Movies", director:"Movies", actor:"Movies", villain:"Movies",
-    hero:"Movies", sequel:"Movies", trailer:"Movies", costume:"Clothing",
-    script:"Writing", scene:"Movies", premiere:"Movies", doctor:"Medicine",
-    firefighter:"Emergency", chef:"Kitchen", pilot:"Flying", farmer:"Farming",
-    mechanic:"Repair", dentist:"Teeth", artist:"Art", engineer:"Building",
-    "police officer":"Law", photographer:"Photos", car:"Vehicle", bus:"Transit",
-    train:"Transit", airplane:"Flying", helicopter:"Flying", boat:"Water",
-    motorcycle:"Wheels", submarine:"Ocean", tractor:"Farming", ambulance:"Emergency",
-    rocket:"Space", computer:"Technology", phone:"Technology", tablet:"Technology",
-    keyboard:"Typing", mouse:"Computer", internet:"Online", battery:"Power",
-    headphones:"Music", printer:"Paper", console:"Gaming", website:"Online",
-    password:"Security", piano:"Music", drums:"Music", violin:"Music",
-    trumpet:"Music", flute:"Music", microphone:"Music", concert:"Music",
-    singer:"Music", melody:"Music", rhythm:"Music", playlist:"Music",
-    water:"Drink", lemonade:"Drink", milkshake:"Drink", smoothie:"Drink",
-    coffee:"Drink", tea:"Drink", soda:"Drink", "hot chocolate":"Drink",
-    juice:"Drink", milk:"Drink", slushie:"Drink", cocoa:"Drink", couch:"Furniture",
-    lamp:"Lighting", refrigerator:"Kitchen", oven:"Kitchen", pillow:"Bedroom",
-    blanket:"Bedding", vacuum:"Cleaning", broom:"Cleaning", spoon:"Kitchen",
-    plate:"Kitchen", towel:"Bathroom", shower:"Bathroom", shirt:"Clothing",
-    jeans:"Clothing", jacket:"Clothing", hat:"Clothing", shoes:"Clothing",
-    socks:"Clothing", dress:"Clothing", gloves:"Clothing", scarf:"Clothing",
-    boots:"Clothing", shorts:"Clothing", sweater:"Clothing", planet:"Space",
-    star:"Space", comet:"Space", asteroid:"Space", galaxy:"Space",
-    astronaut:"Space", sun:"Space", satellite:"Space", spaceship:"Space",
-    "black hole":"Space", rain:"Weather", snow:"Weather", wind:"Weather",
-    cloud:"Weather", fog:"Weather", lightning:"Storm", thunder:"Storm",
-    hurricane:"Storm", heatwave:"Heat", hail:"Weather", christmas:"Holiday",
-    halloween:"Holiday", thanksgiving:"Holiday", birthday:"Celebration",
-    easter:"Holiday", valentine:"Love", parade:"Celebration", gift:"Present",
-    turkey:"Holiday", pumpkin:"Halloween"
-  };
-  return hints[String(word).toLowerCase()] ||
-    ({food:"Food",animals:"Animal",places:"Place",objects:"Object",
-      activities:"Activity",nature:"Nature",school:"School",sports:"Sport",
-      movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",
-      music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",
-      space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.category] || "General");
 }
 
 function updatePlayerCount() {
   const slider = $("playerCount");
   const label = $("playerCountLabel");
   if (!slider || !label) return;
-  const value = Math.max(3, Math.min(20, Number(slider.value) || 5));
-  slider.value = String(value);
-  label.textContent = String(value);
+  const value = Math.max(3, Math.min(20, parseInt(slider.value, 10) || 5));
+  slider.value = value;
+  label.textContent = value;
+}
+
+function hintFor(word) {
+  const hints = {
+    shark:"Ocean", pizza:"Food", guitar:"Music", volcano:"Nature",
+    library:"Books", basketball:"Sport", castle:"Fortress", watermelon:"Fruit",
+    penguin:"Bird", elephant:"Large", dolphin:"Marine", tiger:"Striped",
+    airport:"Travel", popcorn:"Movies", robot:"Machine", camping:"Outdoors",
+    sushi:"Japanese", hamburger:"Food", taco:"Mexican", spaghetti:"Pasta",
+    donut:"Sweet", pineapple:"Tropical", beach:"Sand", hospital:"Medicine",
+    camera:"Photos", bicycle:"Wheels", telescope:"Stars", umbrella:"Rain",
+    pencil:"Writing", mirror:"Reflection", compass:"Direction", swimming:"Water",
+    dancing:"Music", fishing:"Fish", cooking:"Kitchen", painting:"Art",
+    hiking:"Trails", soccer:"Sport", football:"Sport", baseball:"Sport",
+    tennis:"Sport", hockey:"Sport", skiing:"Winter", surfing:"Ocean",
+    cinema:"Movies", actor:"Movies", villain:"Movies", doctor:"Medicine",
+    firefighter:"Emergency", chef:"Kitchen", pilot:"Flying", farmer:"Farming",
+    car:"Vehicle", bus:"Transit", train:"Transit", airplane:"Flying",
+    computer:"Technology", phone:"Technology", headphones:"Music",
+    piano:"Music", drums:"Music", violin:"Music", concert:"Music",
+    coffee:"Drink", lemonade:"Drink", smoothie:"Drink", water:"Drink",
+    couch:"Furniture", lamp:"Lighting", refrigerator:"Kitchen", oven:"Kitchen",
+    shirt:"Clothing", jeans:"Clothing", shoes:"Clothing", planet:"Space",
+    star:"Space", astronaut:"Space", rocket:"Space", rain:"Weather",
+    snow:"Weather", lightning:"Storm", christmas:"Holiday", halloween:"Holiday"
+  };
+  const exact = String(word).toLowerCase();
+  if (hints[exact]) return hints[exact];
+  const base = exact.split(" ").pop();
+  return hints[base] || "General";
 }
 
 function startGame() {
-  const slider = $("playerCount");
-  const category = $("category");
-  const roundTime = $("roundTime");
-  if (!slider || !category || !roundTime) return;
+  updatePlayerCount();
+  state.players = parseInt($("playerCount").value, 10);
+  state.category = $("category").value;
+  state.time = parseInt($("roundTime").value, 10) || 90;
 
-  state.players = Math.max(3, Math.min(20, Number(slider.value) || 5));
-  state.imposters = Math.max(1, Math.floor(Math.random() * Math.max(1, Math.floor(state.players / 3))) + 1);
-  state.category = WORDS[category.value] ? category.value : "mixed";
-  state.time = Math.max(30, Number(roundTime.value) || 90);
+  const pool = WORDS[state.category] || WORDS.mixed;
+  state.word = pool[Math.floor(Math.random() * pool.length)];
 
-  const list = WORDS[state.category] || WORDS.mixed;
-  state.word = list[Math.floor(Math.random() * list.length)];
+  const maxImposters = Math.max(1, Math.floor(state.players / 3));
+  state.imposters = Math.floor(Math.random() * maxImposters) + 1;
+
   state.roles = Array(state.players).fill(false);
-
-  const ids = Array.from({length: state.players}, (_, i) => i);
-  for (let i = ids.length - 1; i > 0; i--) {
+  const order = Array.from({length: state.players}, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+    [order[i], order[j]] = [order[j], order[i]];
   }
-  ids.slice(0, state.imposters).forEach(i => state.roles[i] = true);
+  order.slice(0, state.imposters).forEach(i => state.roles[i] = true);
 
   state.current = 0;
   $("passName").textContent = "Player 1";
   $("passNumber").textContent = "PLAYER 1";
-  show("pass");
+  showScreen("pass");
 }
 
 function revealRole() {
-  const imp = !!state.roles[state.current];
-  $("roleIcon").textContent = imp ? "?" : "✓";
-  $("roleKicker").textContent = imp ? "YOU ARE" : "THE SECRET WORD IS";
-  $("roleTitle").textContent = imp ? "IMPOSTER" : "YOU ARE A REAL PLAYER";
-  $("wordBox").style.display = imp ? "none" : "block";
+  const imposter = state.roles[state.current];
+  $("roleIcon").textContent = imposter ? "?" : "✓";
+  $("roleKicker").textContent = imposter ? "YOU ARE" : "THE SECRET WORD IS";
+  $("roleTitle").textContent = imposter ? "IMPOSTER" : "YOU ARE A REAL PLAYER";
+  $("wordBox").style.display = imposter ? "none" : "block";
   $("secretWord").textContent = state.word;
-  $("roleHint").textContent = imp
-    ? "Hint: " + getImposterHint(state.word) + " — Blend in, listen carefully, and figure out the exact word."
-    : "Describe the word without saying it or giving away too much.";
-  show("role");
+  $("roleHint").textContent = imposter
+    ? "Hint: " + hintFor(state.word) + " — figure out the exact word."
+    : "Describe the word without saying it directly.";
+  showScreen("role");
 }
 
-function passRole() {
+function nextPlayer() {
   state.current++;
   if (state.current < state.players) {
     $("passName").textContent = "Player " + (state.current + 1);
     $("passNumber").textContent = "PLAYER " + (state.current + 1);
-    show("pass");
+    showScreen("pass");
   } else {
     startDiscussion();
   }
 }
 
-function updateTimer() {
-  const minutes = Math.floor(state.timeLeft / 60);
-  const seconds = state.timeLeft % 60;
-  $("timer").textContent = minutes + ":" + String(seconds).padStart(2, "0");
+function renderTimer() {
+  const seconds = Math.max(0, state.timeLeft);
+  $("timer").textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
 }
 
 function startDiscussion() {
   clearInterval(state.timer);
   state.timeLeft = state.time;
-  updateTimer();
-  show("play");
+  renderTimer();
+  showScreen("play");
   state.timer = setInterval(() => {
     state.timeLeft--;
-    updateTimer();
-    if (state.timeLeft <= 0) showVote();
+    renderTimer();
+    if (state.timeLeft <= 0) showVoting();
   }, 1000);
 }
 
-function showVote() {
+function showVoting() {
   clearInterval(state.timer);
+  state.voted = null;
   const grid = $("voteGrid");
   grid.innerHTML = "";
-  state.voted = null;
   $("revealBtn").disabled = true;
 
   for (let i = 0; i < state.players; i++) {
-    const button = document.createElement("button");
-    button.className = "vote-btn";
-    button.textContent = "Player " + (i + 1);
-    button.type = "button";
-    button.addEventListener("click", () => {
-      document.querySelectorAll(".vote-btn").forEach(b => b.classList.remove("selected"));
-      button.classList.add("selected");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "vote-btn";
+    btn.textContent = "Player " + (i + 1);
+    btn.addEventListener("click", () => {
+      grid.querySelectorAll(".vote-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
       state.voted = i;
       $("revealBtn").disabled = false;
     });
-    grid.appendChild(button);
+    grid.appendChild(btn);
   }
-  show("vote");
+  showScreen("vote");
 }
 
 function revealVote() {
   if (state.voted === null) return;
-  const isImp = !!state.roles[state.voted];
+  const caught = state.roles[state.voted];
+
   $("votedPlayer").textContent = "PLAYER " + (state.voted + 1);
-  $("resultMessage").innerHTML = isImp
+  $("resultMessage").innerHTML = caught
     ? "<strong>They were an IMPOSTER.</strong>"
     : "<strong>They were NOT an imposter.</strong>";
-  $("imposterWinActions").classList.toggle("hidden", !isImp);
+
+  $("imposterWinActions").classList.toggle("hidden", !caught);
   $("guessResult").classList.add("hidden");
   $("guessInput").value = "";
-  $("nextRoundBtn").classList.toggle("hidden", isImp);
-  show("reveal");
+  $("nextRoundBtn").classList.toggle("hidden", caught);
+  showScreen("reveal");
 }
 
 function submitGuess() {
   const guess = $("guessInput").value.trim();
   if (!guess) return;
-  $("guessResult").classList.remove("hidden");
+
   $("imposterWinActions").classList.add("hidden");
-  $("guessResult").textContent = guess.toLowerCase() === String(state.word).toLowerCase()
+  $("guessResult").classList.remove("hidden");
+
+  const correct = guess.localeCompare(String(state.word), undefined, {sensitivity:"accent"}) === 0;
+  $("guessResult").textContent = correct
     ? "🎯 Correct! The imposter wins the round."
     : "❌ Wrong! The real players win. The word was “" + state.word + "”.";
   $("nextRoundBtn").classList.remove("hidden");
+}
+
+function resetGame() {
+  clearInterval(state.timer);
+  state.timer = null;
+  state.current = 0;
+  state.voted = null;
+  showScreen("setup");
+  updatePlayerCount();
 }
 
 function bindGame() {
@@ -242,30 +216,22 @@ function bindGame() {
   if (slider) {
     slider.addEventListener("input", updatePlayerCount);
     slider.addEventListener("change", updatePlayerCount);
-    slider.addEventListener("pointermove", event => {
-      if (event.buttons) updatePlayerCount();
-    });
   }
 
   $("startBtn").addEventListener("click", startGame);
   $("readyBtn").addEventListener("click", revealRole);
-  $("hideRoleBtn").addEventListener("click", passRole);
-  $("finishDiscussionBtn").addEventListener("click", showVote);
+  $("hideRoleBtn").addEventListener("click", nextPlayer);
+  $("finishDiscussionBtn").addEventListener("click", showVoting);
   $("revealBtn").addEventListener("click", revealVote);
   $("guessBtn").addEventListener("click", submitGuess);
-  $("nextRoundBtn").addEventListener("click", () => show("setup"));
-  $("resetBtn").addEventListener("click", () => {
-    clearInterval(state.timer);
-    state.timer = null;
-    show("setup");
-    updatePlayerCount();
-  });
+  $("nextRoundBtn").addEventListener("click", resetGame);
+  $("resetBtn").addEventListener("click", resetGame);
 
   updatePlayerCount();
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bindGame);
+  document.addEventListener("DOMContentLoaded", bindGame, {once:true});
 } else {
   bindGame();
 }
