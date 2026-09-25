@@ -25,310 +25,221 @@ WORDS.mixed=[...new Set(Object.keys(WORDS).filter(k=>k!=="mixed").flatMap(k=>WOR
 const $ = id => document.getElementById(id);
 
 const state = {
-  players: 5,
-  imposters: 1,
-  category: "mixed",
-  time: 90,
-  timeLeft: 90,
-  word: "",
-  roles: [],
-  current: 0,
-  voted: null,
-  timer: null,
-  started: false,
-  bound: false
+  players: 5, imposters: 1, category: "mixed", time: 90, timeLeft: 90,
+  word: "", roles: [], current: 0, voted: null, timer: null, started: false
 };
 
-const REQUIRED_IDS = [
-  "setup","pass","role","play","vote","reveal",
-  "playerCount","playerCountLabel","category","roundTime",
-  "startBtn","readyBtn","hideRoleBtn","finishDiscussionBtn",
-  "revealBtn","guessBtn","nextRoundBtn","resetBtn",
-  "passName","passNumber","roleIcon","roleKicker","roleTitle",
-  "wordBox","secretWord","roleHint","timer","voteGrid",
-  "votedPlayer","resultMessage","imposterWinActions","guessResult",
-  "guessInput"
-];
+function el(id) { return document.getElementById(id); }
 
 function showScreen(id) {
-  document.querySelectorAll(".screen").forEach(screen => {
-    screen.classList.toggle("active", screen.id === id);
-  });
-  window.scrollTo(0, 0);
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  const target = el(id);
+  if (target) target.classList.add("active");
 }
 
 function updatePlayerCount() {
-  const slider = $("playerCount");
-  const label = $("playerCountLabel");
+  const slider = el("playerCount");
+  const label = el("playerCountLabel");
   if (!slider || !label) return;
-  const value = Math.max(3, Math.min(20, Number(slider.value) || 5));
-  slider.value = String(value);
-  label.textContent = String(value);
+  const value = Math.round(Number(slider.value));
+  if (!Number.isFinite(value)) return;
+  state.players = Math.max(3, Math.min(20, value));
+  label.textContent = state.players;
 }
 
 function hintFor(word) {
   const hints = {
-    shark:"Ocean", pizza:"Food", guitar:"Music", volcano:"Nature",
-    library:"Books", basketball:"Sport", castle:"Fortress", watermelon:"Fruit",
-    penguin:"Bird", elephant:"Large", dolphin:"Marine", tiger:"Striped",
-    airport:"Travel", popcorn:"Movies", robot:"Machine", camping:"Outdoors",
-    sushi:"Japanese", hamburger:"Food", taco:"Mexican", spaghetti:"Pasta",
-    donut:"Sweet", pineapple:"Tropical", beach:"Sand", hospital:"Medicine",
-    camera:"Photos", bicycle:"Wheels", telescope:"Stars", umbrella:"Rain",
-    pencil:"Writing", mirror:"Reflection", compass:"Direction", swimming:"Water",
-    dancing:"Music", fishing:"Fish", cooking:"Kitchen", painting:"Art",
-    hiking:"Trails", soccer:"Sport", football:"Sport", baseball:"Sport",
-    tennis:"Sport", hockey:"Sport", skiing:"Winter", surfing:"Ocean",
-    cinema:"Movies", actor:"Movies", villain:"Movies", doctor:"Medicine",
-    firefighter:"Emergency", chef:"Kitchen", pilot:"Flying", farmer:"Farming",
-    car:"Vehicle", bus:"Transit", train:"Transit", airplane:"Flying",
-    computer:"Technology", phone:"Technology", headphones:"Music",
-    piano:"Music", drums:"Music", violin:"Music", concert:"Music",
-    coffee:"Drink", lemonade:"Drink", smoothie:"Drink", water:"Drink",
-    couch:"Furniture", lamp:"Lighting", refrigerator:"Kitchen", oven:"Kitchen",
-    shirt:"Clothing", jeans:"Clothing", shoes:"Clothing", planet:"Space",
-    star:"Space", astronaut:"Space", rocket:"Space", rain:"Weather",
-    snow:"Weather", lightning:"Storm", christmas:"Holiday", halloween:"Holiday"
+    shark:"Ocean",pizza:"Food",guitar:"Music",volcano:"Nature",library:"Books",
+    basketball:"Sport",castle:"Fortress",watermelon:"Fruit",penguin:"Bird",
+    elephant:"Large",dolphin:"Marine",tiger:"Striped",airport:"Travel",
+    popcorn:"Movies",robot:"Machine",camping:"Outdoors",sushi:"Japanese",
+    hamburger:"Food",taco:"Mexican",spaghetti:"Pasta",donut:"Sweet",
+    pineapple:"Tropical",beach:"Sand",hospital:"Medicine",camera:"Photos",
+    bicycle:"Wheels",telescope:"Stars",umbrella:"Rain",pencil:"Writing",
+    mirror:"Reflection",compass:"Direction",swimming:"Water",dancing:"Music",
+    fishing:"Fish",cooking:"Kitchen",painting:"Art",hiking:"Trails",
+    soccer:"Sport",football:"Sport",baseball:"Sport",tennis:"Sport",
+    hockey:"Sport",skiing:"Winter",surfing:"Ocean",cinema:"Movies",
+    actor:"Movies",villain:"Movies",doctor:"Medicine",firefighter:"Emergency",
+    chef:"Kitchen",pilot:"Flying",farmer:"Farming",car:"Vehicle",bus:"Transit",
+    train:"Transit",airplane:"Flying",computer:"Technology",phone:"Technology",
+    headphones:"Music",piano:"Music",drums:"Music",violin:"Music",concert:"Music",
+    coffee:"Drink",lemonade:"Drink",smoothie:"Drink",water:"Drink",
+    couch:"Furniture",lamp:"Lighting",refrigerator:"Kitchen",oven:"Kitchen",
+    shirt:"Clothing",jeans:"Clothing",shoes:"Clothing",planet:"Space",
+    star:"Space",astronaut:"Space",rocket:"Space",rain:"Weather",snow:"Weather",
+    lightning:"Storm",christmas:"Holiday",halloween:"Holiday"
   };
-  const exact = String(word || "").toLowerCase();
-  return hints[exact] || hints[exact.split(" ").pop()] || "General";
+  const text = String(word || "").toLowerCase();
+  return hints[text] || hints[text.split(" ").pop()] || "General";
 }
 
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+function shuffle(a) {
+  for (let i=a.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
   }
-  return array;
+  return a;
 }
 
 function startGame() {
+  const slider=el("playerCount"), category=el("category"), roundTime=el("roundTime");
+  if (!slider || !category || !roundTime) return;
+
   updatePlayerCount();
+  state.players=Math.max(3,Math.min(20,Number(slider.value)||5));
+  state.category=category.value||"mixed";
+  state.time=Math.max(10,Number(roundTime.value)||90);
+  state.timeLeft=state.time;
+  state.current=0;
+  state.voted=null;
+  state.started=true;
 
-  const playerCount = $("playerCount");
-  const category = $("category");
-  const roundTime = $("roundTime");
-  if (!playerCount || !category || !roundTime) return;
+  const pool=Array.isArray(WORDS[state.category])&&WORDS[state.category].length
+    ? WORDS[state.category] : WORDS.mixed;
+  state.word=pool[Math.floor(Math.random()*pool.length)];
 
-  state.players = Math.max(3, Math.min(20, Number(playerCount.value) || 5));
-  state.category = category.value || "mixed";
-  state.time = Math.max(10, Number(roundTime.value) || 90);
-  state.timeLeft = state.time;
-  state.current = 0;
-  state.voted = null;
-  state.started = true;
+  const maxImposters=Math.max(1,Math.floor(state.players/3));
+  state.imposters=Math.floor(Math.random()*maxImposters)+1;
+  state.roles=Array(state.players).fill(false);
 
-  const pool = Array.isArray(WORDS[state.category]) && WORDS[state.category].length
-    ? WORDS[state.category]
-    : WORDS.mixed;
+  shuffle(Array.from({length:state.players},(_,i)=>i))
+    .slice(0,state.imposters)
+    .forEach(i=>state.roles[i]=true);
 
-  state.word = pool[Math.floor(Math.random() * pool.length)];
-
-  const maxImposters = Math.max(1, Math.floor(state.players / 3));
-  state.imposters = Math.floor(Math.random() * maxImposters) + 1;
-
-  state.roles = Array(state.players).fill(false);
-  shuffle(Array.from({length: state.players}, (_, i) => i))
-    .slice(0, state.imposters)
-    .forEach(index => { state.roles[index] = true; });
-
-  $("passName").textContent = "Player 1";
-  $("passNumber").textContent = "PLAYER 1";
+  el("passName").textContent="Player 1";
+  el("passNumber").textContent="PLAYER 1";
   showScreen("pass");
 }
 
 function revealRole() {
-  if (!state.started || !state.roles.length) return;
-
-  const imposter = Boolean(state.roles[state.current]);
-  $("roleIcon").textContent = imposter ? "?" : "✓";
-  $("roleKicker").textContent = imposter ? "YOU ARE" : "THE SECRET WORD IS";
-  $("roleTitle").textContent = imposter ? "IMPOSTER" : "YOU ARE A REAL PLAYER";
-  $("wordBox").style.display = imposter ? "none" : "block";
-  $("secretWord").textContent = state.word;
-  $("roleHint").textContent = imposter
-    ? "Hint: " + hintFor(state.word) + " — figure out the exact word."
+  if (!state.started) return;
+  const imposter=!!state.roles[state.current];
+  el("roleIcon").textContent=imposter?"?":"✓";
+  el("roleKicker").textContent=imposter?"YOU ARE":"THE SECRET WORD IS";
+  el("roleTitle").textContent=imposter?"IMPOSTER":"YOU ARE A REAL PLAYER";
+  el("wordBox").style.display=imposter?"none":"block";
+  el("secretWord").textContent=state.word;
+  el("roleHint").textContent=imposter
+    ? "Hint: "+hintFor(state.word)+" — figure out the exact word."
     : "Describe the word without saying it directly.";
   showScreen("role");
 }
 
 function nextPlayer() {
   if (!state.started) return;
-
-  state.current += 1;
-  if (state.current < state.players) {
-    $("passName").textContent = "Player " + (state.current + 1);
-    $("passNumber").textContent = "PLAYER " + (state.current + 1);
+  state.current++;
+  if (state.current<state.players) {
+    el("passName").textContent="Player "+(state.current+1);
+    el("passNumber").textContent="PLAYER "+(state.current+1);
     showScreen("pass");
-    return;
+  } else {
+    startDiscussion();
   }
-
-  startDiscussion();
 }
 
 function renderTimer() {
-  const timer = $("timer");
-  if (!timer) return;
-  const seconds = Math.max(0, Number(state.timeLeft) || 0);
-  timer.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+  const seconds=Math.max(0,Math.floor(state.timeLeft));
+  el("timer").textContent=Math.floor(seconds/60)+":"+String(seconds%60).padStart(2,"0");
 }
 
 function startDiscussion() {
   clearInterval(state.timer);
-  state.timeLeft = state.time;
+  state.timeLeft=state.time;
   renderTimer();
   showScreen("play");
-
-  state.timer = setInterval(() => {
-    state.timeLeft -= 1;
+  state.timer=setInterval(()=>{
+    state.timeLeft--;
     renderTimer();
-    if (state.timeLeft <= 0) showVoting();
-  }, 1000);
+    if(state.timeLeft<=0) showVoting();
+  },1000);
 }
 
 function showVoting() {
   clearInterval(state.timer);
-  state.timer = null;
-  state.voted = null;
-
-  const grid = $("voteGrid");
-  const reveal = $("revealBtn");
-  if (!grid || !reveal) return;
-
+  state.timer=null;
+  state.voted=null;
+  const grid=el("voteGrid"), reveal=el("revealBtn");
+  if(!grid||!reveal)return;
   grid.replaceChildren();
-  reveal.disabled = true;
-
-  for (let i = 0; i < state.players; i += 1) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "vote-btn";
-    button.textContent = "Player " + (i + 1);
-
-    button.addEventListener("click", () => {
-      grid.querySelectorAll(".vote-btn").forEach(item => item.classList.remove("selected"));
-      button.classList.add("selected");
-      state.voted = i;
-      reveal.disabled = false;
+  reveal.disabled=true;
+  for(let i=0;i<state.players;i++){
+    const b=document.createElement("button");
+    b.type="button"; b.className="vote-btn"; b.textContent="Player "+(i+1);
+    b.addEventListener("click",()=>{
+      grid.querySelectorAll(".vote-btn").forEach(x=>x.classList.remove("selected"));
+      b.classList.add("selected"); state.voted=i; reveal.disabled=false;
     });
-
-    grid.appendChild(button);
+    grid.appendChild(b);
   }
-
   showScreen("vote");
 }
 
 function revealVote() {
-  if (state.voted === null || !state.roles.length) return;
-
-  const caught = Boolean(state.roles[state.voted]);
-  $("votedPlayer").textContent = "PLAYER " + (state.voted + 1);
-  $("resultMessage").innerHTML = caught
-    ? "<strong>They were an IMPOSTER.</strong>"
-    : "<strong>They were NOT an imposter.</strong>";
-
-  $("imposterWinActions").classList.toggle("hidden", !caught);
-  $("guessResult").classList.add("hidden");
-  $("guessInput").value = "";
-  $("nextRoundBtn").classList.toggle("hidden", caught);
+  if(state.voted===null)return;
+  const caught=!!state.roles[state.voted];
+  el("votedPlayer").textContent="PLAYER "+(state.voted+1);
+  el("resultMessage").innerHTML=caught?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";
+  el("imposterWinActions").classList.toggle("hidden",!caught);
+  el("guessResult").classList.add("hidden");
+  el("guessInput").value="";
+  el("nextRoundBtn").classList.toggle("hidden",caught);
   showScreen("reveal");
 }
 
 function submitGuess() {
-  const input = $("guessInput");
-  if (!input) return;
-
-  const guess = input.value.trim();
-  if (!guess) {
-    input.focus();
-    return;
-  }
-
-  $("imposterWinActions").classList.add("hidden");
-  $("guessResult").classList.remove("hidden");
-
-  const correct = guess.localeCompare(String(state.word), undefined, {
-    sensitivity: "accent"
-  }) === 0;
-
-  $("guessResult").textContent = correct
-    ? "🎯 Correct! The imposter wins the round."
-    : "❌ Wrong! The real players win. The word was “" + state.word + "”.";
-
-  $("nextRoundBtn").classList.remove("hidden");
+  const input=el("guessInput"), result=el("guessResult");
+  if(!input)return;
+  const guess=input.value.trim();
+  if(!guess){input.focus();return;}
+  el("imposterWinActions").classList.add("hidden");
+  result.classList.remove("hidden");
+  result.textContent=guess.toLowerCase()===String(state.word).toLowerCase()
+    ?"🎯 Correct! The imposter wins the round."
+    :"❌ Wrong! The real players win. The word was “"+state.word+"”.";
+  el("nextRoundBtn").classList.remove("hidden");
 }
 
 function resetGame() {
   clearInterval(state.timer);
-  state.timer = null;
-  state.started = false;
-  state.players = Number($("playerCount")?.value) || 5;
-  state.imposters = 1;
-  state.word = "";
-  state.roles = [];
-  state.current = 0;
-  state.voted = null;
-  state.timeLeft = state.time;
-  showScreen("setup");
-  updatePlayerCount();
+  state.timer=null; state.started=false; state.roles=[]; state.word=""; state.current=0;
+  showScreen("setup"); updatePlayerCount();
 }
 
 function bindGame() {
-  if (state.bound) return;
+  const slider=el("playerCount");
+  const start=el("startBtn");
+  if(!slider||!start) throw new Error("Game controls are missing from the page.");
 
-  const missing = REQUIRED_IDS.filter(id => !$(id));
-  if (missing.length) {
-    throw new Error("Missing game elements: " + missing.join(", "));
-  }
-
-  state.bound = true;
-
-  $("playerCount").addEventListener("input", updatePlayerCount);
-  $("playerCount").addEventListener("change", updatePlayerCount);
-  $("startBtn").addEventListener("click", startGame);
-  $("readyBtn").addEventListener("click", revealRole);
-  $("hideRoleBtn").addEventListener("click", nextPlayer);
-  $("finishDiscussionBtn").addEventListener("click", showVoting);
-  $("revealBtn").addEventListener("click", revealVote);
-  $("guessBtn").addEventListener("click", submitGuess);
-  $("nextRoundBtn").addEventListener("click", resetGame);
-  $("resetBtn").addEventListener("click", resetGame);
-
+  slider.addEventListener("input",updatePlayerCount);
+  slider.addEventListener("change",updatePlayerCount);
+  start.addEventListener("click",startGame);
+  el("readyBtn").addEventListener("click",revealRole);
+  el("hideRoleBtn").addEventListener("click",nextPlayer);
+  el("finishDiscussionBtn").addEventListener("click",showVoting);
+  el("revealBtn").addEventListener("click",revealVote);
+  el("guessBtn").addEventListener("click",submitGuess);
+  el("nextRoundBtn").addEventListener("click",resetGame);
+  el("resetBtn").addEventListener("click",resetGame);
   updatePlayerCount();
 }
 
-function showBootError(error) {
-  console.error(error);
-  const box = document.createElement("div");
-  box.style.cssText =
-    "position:fixed;inset:12px;z-index:9999;background:#120d10;color:#fff;" +
-    "border:2px solid #ff475f;border-radius:14px;padding:18px;font:14px/1.5 system-ui;" +
-    "box-shadow:0 12px 40px #000;overflow:auto";
-  box.innerHTML =
-    "<strong style='color:#ff475f;font-size:18px'>Game startup error</strong>" +
-    "<p>The game could not initialize. Refresh once; if it persists, this message identifies the failure.</p>" +
-    "<pre style='white-space:pre-wrap'>" +
-    String(error && error.stack ? error.stack : error) +
-    "</pre>";
-  document.body.appendChild(box);
-}
-
 function boot() {
-  try {
-    bindGame();
-  } catch (error) {
-    showBootError(error);
+  try { bindGame(); }
+  catch(e) {
+    console.error("Imposter startup failed:",e);
+    const setup=el("setup");
+    if(setup) {
+      const msg=document.createElement("p");
+      msg.textContent="Game failed to start: "+e.message;
+      msg.style.cssText="color:#ff475f;font-weight:800;padding:12px";
+      setup.appendChild(msg);
+    }
   }
 }
 
-window.addEventListener("error", event => {
-  if (event.error) console.error(event.error);
-});
-window.addEventListener("unhandledrejection", event => {
-  console.error(event.reason);
-});
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot, {once: true});
+if(document.readyState==="loading") {
+  document.addEventListener("DOMContentLoaded",boot,{once:true});
 } else {
   boot();
 }
