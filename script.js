@@ -20,4 +20,252 @@ space:expand("Planet|Star|Sun|Moon|Mercury|Venus|Earth|Mars|Jupiter|Saturn|Uranu
 weather:expand("Rain|Snow|Wind|Cloud|Fog|Lightning|Thunder|Hurricane|Tornado|Hail|Sleet|Drizzle|Storm|Thunderstorm|Blizzard|Heatwave|Cold wave|Drought|Sunshine|Rainbow|Temperature|Thermometer|Humidity|Pressure|Breeze|Gust|Cyclone|Typhoon|Monsoon|Flood".split("|"),"Severe|Light|Heavy|Strong|Cold|Warm|Hot|Winter|Summer|Tropical|Coastal|Storm|Morning|Evening|Extreme"),
 holidays:expand("Christmas|Halloween|Thanksgiving|Birthday|Easter|Valentine|New Year|Fireworks|Parade|Costume|Gift|Turkey|Pumpkin|Santa|Reindeer|Snowman|Stocking|Ornament|Wreath|Candy|Chocolate|Easter egg|Easter bunny|Party|Cake|Candles|Balloons|Confetti|Graduation|Wedding".split("|"),"Family|Holiday|Annual|Winter|Summer|Spring|Fall|National|Religious|School|Birthday|Festival|Community|Traditional|Special"),
 };
-WORDS.mixed=[...new Set(Object.keys(WORDS).flatMap(k=>WORDS[k]))];Object.keys(WORDS).filter(k=>k!=="mixed").forEach(k=>WORDS.mixed.push(...WORDS[k]));;const $=id=>document.getElementById(id);let state={players:5,imposters:1,category:"mixed",time:90,word:"",roles:[],current:0,voted:null,timer:null,timeLeft:0};const screens=["setup","pass","role","play","vote","reveal"];function show(id){screens.forEach(s=>$(s).classList.toggle("active",s===id));scrollTo(0,0)}function getImposterHint(word){const hints={volcano:"Nature",pancake:"Breakfast",library:"Books",shark:"Ocean",airport:"Travel",basketball:"Sport",rainbow:"Sky",pyramid:"Ancient",popcorn:"Movies",snowman:"Winter",robot:"Machine",castle:"Fortress",camping:"Outdoors",guitar:"Music",dragon:"Mythical",subway:"Transit",watermelon:"Fruit",fireworks:"Celebration","roller coaster":"Amusement",sushi:"Japanese",hamburger:"Food","ice cream":"Dessert",taco:"Mexican",spaghetti:"Pasta",donut:"Sweet",pretzel:"Snack",pineapple:"Tropical",penguin:"Bird",elephant:"Large",giraffe:"Tall",dolphin:"Marine",tiger:"Striped",octopus:"Tentacles",kangaroo:"Hopping",butterfly:"Insect",crocodile:"Reptile",owl:"Night",panda:"Bear",beach:"Sand",hospital:"Medicine",restaurant:"Dining",desert:"Dry",mountain:"Climbing",backpack:"School",umbrella:"Rain",camera:"Photos",bicycle:"Wheels",telescope:"Stars",toothbrush:"Teeth",clock:"Time",pencil:"Writing",mirror:"Reflection",compass:"Direction",swimming:"Water",dancing:"Music",fishing:"Fish",skateboarding:"Wheels",cooking:"Kitchen",painting:"Art",singing:"Voice",hiking:"Trails",bowling:"Pins",reading:"Books",thunderstorm:"Lightning",snowflake:"Winter",ocean:"Water",waterfall:"Nature",forest:"Trees",sunset:"Evening",tornado:"Storm",moon:"Night",glacier:"Ice",river:"Water",textbook:"School",locker:"Storage",calculator:"Math",teacher:"School",cafeteria:"Food",recess:"Break",homework:"School","science lab":"Science",gym:"Exercise",soccer:"Sport",football:"Sport",baseball:"Sport",tennis:"Sport",volleyball:"Sport",hockey:"Sport",golf:"Sport",boxing:"Sport",wrestling:"Sport",surfing:"Ocean",skiing:"Winter",archery:"Target",cinema:"Movies",director:"Movies",actor:"Movies",villain:"Movies",hero:"Movies",sequel:"Movies",trailer:"Movies",costume:"Clothing",script:"Writing",scene:"Movies",premiere:"Movies",doctor:"Medicine",firefighter:"Emergency",chef:"Kitchen",pilot:"Flying",farmer:"Farming",mechanic:"Repair",dentist:"Teeth",artist:"Art",engineer:"Building","police officer":"Law",photographer:"Photos",car:"Vehicle",bus:"Transit",train:"Transit",airplane:"Flying",helicopter:"Flying",boat:"Water",motorcycle:"Wheels",submarine:"Ocean",tractor:"Farming",ambulance:"Emergency",rocket:"Space",computer:"Technology",phone:"Technology",tablet:"Technology",keyboard:"Typing",mouse:"Computer",internet:"Online",battery:"Power",headphones:"Music",printer:"Paper",console:"Gaming",website:"Online",password:"Security",piano:"Music",drums:"Music",violin:"Music",trumpet:"Music",flute:"Music",microphone:"Music",concert:"Music",singer:"Music",melody:"Music",rhythm:"Music",playlist:"Music",water:"Drink",lemonade:"Drink",milkshake:"Drink",smoothie:"Drink",coffee:"Drink",tea:"Drink",soda:"Drink","hot chocolate":"Drink",juice:"Drink",milk:"Drink",slushie:"Drink",cocoa:"Drink",couch:"Furniture",lamp:"Lighting",refrigerator:"Kitchen",oven:"Kitchen",pillow:"Bedroom",blanket:"Bedding",vacuum:"Cleaning",broom:"Cleaning",spoon:"Kitchen",plate:"Kitchen",towel:"Bathroom",shower:"Bathroom",shirt:"Clothing",jeans:"Clothing",jacket:"Clothing",hat:"Clothing",shoes:"Clothing",socks:"Clothing",dress:"Clothing",gloves:"Clothing",scarf:"Clothing",boots:"Clothing",shorts:"Clothing",sweater:"Clothing",planet:"Space",star:"Space",comet:"Space",asteroid:"Space",galaxy:"Space",astronaut:"Space",sun:"Space",satellite:"Space",spaceship:"Space","black hole":"Space",rain:"Weather",snow:"Weather",wind:"Weather",cloud:"Weather",fog:"Weather",lightning:"Storm",thunder:"Storm",hurricane:"Storm",heatwave:"Heat",hail:"Weather",christmas:"Holiday",halloween:"Holiday",thanksgiving:"Holiday",birthday:"Celebration",easter:"Holiday",valentine:"Love",parade:"Celebration",gift:"Present",turkey:"Holiday",pumpkin:"Halloween"};return hints[word.toLowerCase()]||({food:"Food",animals:"Animal",places:"Place",objects:"Object",activities:"Activity",nature:"Nature",school:"School",sports:"Sport",movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.category]||"General")}function updateRanges(){const slider=$("playerCount");const label=$("playerCountLabel");if(slider&&label)label.textContent=slider.value}const playerSlider=$("playerCount");if(playerSlider){playerSlider.addEventListener("input",updateRanges);playerSlider.addEventListener("change",updateRanges);playerSlider.addEventListener("touchmove",updateRanges,{passive:true});updateRanges()}$("startBtn").onclick=()=>{state.players=+$("playerCount").value;const maxImposters=Math.max(1,Math.floor(state.players/3));state.imposters=1+Math.floor(Math.random()*maxImposters);state.category=$("category").value;state.time=+$("roundTime").value;const list=WORDS[state.category];state.word=list[Math.floor(Math.random()*list.length)];state.roles=Array(state.players).fill(false);let ids=[...Array(state.players).keys()];for(let i=ids.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]]}ids.slice(0,state.imposters).forEach(i=>state.roles[i]=true);state.current=0;$("passName").textContent="Player 1";$("passNumber").textContent="PLAYER 1";show("pass")};$("readyBtn").onclick=()=>{const imp=state.roles[state.current];$("roleIcon").textContent=imp?"?":"✓";$("roleKicker").textContent=imp?"YOU ARE":"THE SECRET WORD IS";$("roleTitle").textContent=imp?"IMPOSTER":"YOU ARE A REAL PLAYER";$("wordBox").style.display=imp?"none":"block";$("secretWord").textContent=state.word;$("roleHint").textContent=imp?"Hint: "+getImposterHint(state.word)+" — Blend in, listen carefully, and figure out the exact word.":"Describe the word without saying it or giving away too much.";show("role")};$("hideRoleBtn").onclick=()=>{state.current++;if(state.current<state.players){$("passName").textContent="Player "+(state.current+1);$("passNumber").textContent="PLAYER "+(state.current+1);show("pass")}else startDiscussion()};function startDiscussion(){state.timeLeft=state.time;updateTimer();show("play");clearInterval(state.timer);state.timer=setInterval(()=>{state.timeLeft--;updateTimer();if(state.timeLeft<=0){clearInterval(state.timer);showVote()}},1000)}function updateTimer(){let m=Math.floor(state.timeLeft/60),s=state.timeLeft%60;$("timer").textContent=m+":"+(s<10?"0":"")+s}function showVote(){clearInterval(state.timer);let grid=$("voteGrid");grid.innerHTML="";state.voted=null;$("revealBtn").disabled=true;for(let i=0;i<state.players;i++){let b=document.createElement("button");b.className="vote-btn";b.textContent="Player "+(i+1);b.onclick=()=>{document.querySelectorAll(".vote-btn").forEach(x=>x.classList.remove("selected"));b.classList.add("selected");state.voted=i;$("revealBtn").disabled=false};grid.appendChild(b)}show("vote")}$("finishDiscussionBtn").onclick=showVote;$("revealBtn").onclick=()=>{const isImp=state.roles[state.voted];$("votedPlayer").textContent="PLAYER "+(state.voted+1);$("resultMessage").innerHTML=isImp?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";$("imposterWinActions").classList.toggle("hidden",!isImp);$("guessResult").classList.add("hidden");$("guessInput").value="";$("nextRoundBtn").classList.toggle("hidden",isImp);show("reveal")};$("guessBtn").onclick=()=>{const guess=$("guessInput").value.trim();if(!guess)return;$("guessResult").classList.remove("hidden");$("imposterWinActions").classList.add("hidden");$("guessResult").textContent=guess.toLowerCase()===state.word.toLowerCase()?"🎯 Correct! The imposter wins the round.":"❌ Wrong! The real players win. The word was “"+state.word+"”.";$("nextRoundBtn").classList.remove("hidden")};$("nextRoundBtn").onclick=()=>show("setup");$("resetBtn").onclick=()=>{clearInterval(state.timer);show("setup")};updateRanges();
+WORDS.mixed=[...new Set(Object.keys(WORDS).flatMap(k=>WORDS[k]))];Object.keys(WORDS).filter(k=>k!=="mixed").forEach(k=>WORDS.mixed.push(...WORDS[k]));
+const $ = id => document.getElementById(id);
+
+const state = {
+  players: 5,
+  imposters: 1,
+  category: "mixed",
+  time: 90,
+  word: "",
+  roles: [],
+  current: 0,
+  voted: null,
+  timer: null,
+  timeLeft: 0
+};
+
+const screens = ["setup","pass","role","play","vote","reveal"];
+
+function show(id) {
+  screens.forEach(screen => {
+    const el = $(screen);
+    if (el) el.classList.toggle("active", screen === id);
+  });
+  window.scrollTo(0, 0);
+}
+
+function getImposterHint(word) {
+  const hints = {
+    volcano:"Nature", pancake:"Breakfast", library:"Books", shark:"Ocean",
+    airport:"Travel", basketball:"Sport", rainbow:"Sky", popcorn:"Movies",
+    robot:"Machine", castle:"Fortress", camping:"Outdoors", guitar:"Music",
+    subway:"Transit", watermelon:"Fruit", fireworks:"Celebration", sushi:"Japanese",
+    hamburger:"Food", "ice cream":"Dessert", taco:"Mexican", spaghetti:"Pasta",
+    donut:"Sweet", pretzel:"Snack", pineapple:"Tropical", penguin:"Bird",
+    elephant:"Large", giraffe:"Tall", dolphin:"Marine", tiger:"Striped",
+    octopus:"Tentacles", kangaroo:"Hopping", butterfly:"Insect", crocodile:"Reptile",
+    owl:"Night", panda:"Bear", beach:"Sand", hospital:"Medicine", restaurant:"Dining",
+    desert:"Dry", mountain:"Climbing", backpack:"School", umbrella:"Rain",
+    camera:"Photos", bicycle:"Wheels", telescope:"Stars", toothbrush:"Teeth",
+    clock:"Time", pencil:"Writing", mirror:"Reflection", compass:"Direction",
+    swimming:"Water", dancing:"Music", fishing:"Fish", skateboarding:"Wheels",
+    cooking:"Kitchen", painting:"Art", singing:"Voice", hiking:"Trails",
+    bowling:"Pins", reading:"Books", thunderstorm:"Lightning", snowflake:"Winter",
+    ocean:"Water", waterfall:"Nature", forest:"Trees", sunset:"Evening",
+    tornado:"Storm", moon:"Night", glacier:"Ice", river:"Water", textbook:"School",
+    locker:"Storage", calculator:"Math", teacher:"School", cafeteria:"Food",
+    recess:"Break", homework:"School", "science lab":"Science", gym:"Exercise",
+    soccer:"Sport", football:"Sport", baseball:"Sport", tennis:"Sport",
+    volleyball:"Sport", hockey:"Sport", golf:"Sport", boxing:"Sport",
+    wrestling:"Sport", surfing:"Ocean", skiing:"Winter", archery:"Target",
+    cinema:"Movies", director:"Movies", actor:"Movies", villain:"Movies",
+    hero:"Movies", sequel:"Movies", trailer:"Movies", costume:"Clothing",
+    script:"Writing", scene:"Movies", premiere:"Movies", doctor:"Medicine",
+    firefighter:"Emergency", chef:"Kitchen", pilot:"Flying", farmer:"Farming",
+    mechanic:"Repair", dentist:"Teeth", artist:"Art", engineer:"Building",
+    "police officer":"Law", photographer:"Photos", car:"Vehicle", bus:"Transit",
+    train:"Transit", airplane:"Flying", helicopter:"Flying", boat:"Water",
+    motorcycle:"Wheels", submarine:"Ocean", tractor:"Farming", ambulance:"Emergency",
+    rocket:"Space", computer:"Technology", phone:"Technology", tablet:"Technology",
+    keyboard:"Typing", mouse:"Computer", internet:"Online", battery:"Power",
+    headphones:"Music", printer:"Paper", console:"Gaming", website:"Online",
+    password:"Security", piano:"Music", drums:"Music", violin:"Music",
+    trumpet:"Music", flute:"Music", microphone:"Music", concert:"Music",
+    singer:"Music", melody:"Music", rhythm:"Music", playlist:"Music",
+    water:"Drink", lemonade:"Drink", milkshake:"Drink", smoothie:"Drink",
+    coffee:"Drink", tea:"Drink", soda:"Drink", "hot chocolate":"Drink",
+    juice:"Drink", milk:"Drink", slushie:"Drink", cocoa:"Drink", couch:"Furniture",
+    lamp:"Lighting", refrigerator:"Kitchen", oven:"Kitchen", pillow:"Bedroom",
+    blanket:"Bedding", vacuum:"Cleaning", broom:"Cleaning", spoon:"Kitchen",
+    plate:"Kitchen", towel:"Bathroom", shower:"Bathroom", shirt:"Clothing",
+    jeans:"Clothing", jacket:"Clothing", hat:"Clothing", shoes:"Clothing",
+    socks:"Clothing", dress:"Clothing", gloves:"Clothing", scarf:"Clothing",
+    boots:"Clothing", shorts:"Clothing", sweater:"Clothing", planet:"Space",
+    star:"Space", comet:"Space", asteroid:"Space", galaxy:"Space",
+    astronaut:"Space", sun:"Space", satellite:"Space", spaceship:"Space",
+    "black hole":"Space", rain:"Weather", snow:"Weather", wind:"Weather",
+    cloud:"Weather", fog:"Weather", lightning:"Storm", thunder:"Storm",
+    hurricane:"Storm", heatwave:"Heat", hail:"Weather", christmas:"Holiday",
+    halloween:"Holiday", thanksgiving:"Holiday", birthday:"Celebration",
+    easter:"Holiday", valentine:"Love", parade:"Celebration", gift:"Present",
+    turkey:"Holiday", pumpkin:"Halloween"
+  };
+  return hints[String(word).toLowerCase()] ||
+    ({food:"Food",animals:"Animal",places:"Place",objects:"Object",
+      activities:"Activity",nature:"Nature",school:"School",sports:"Sport",
+      movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",
+      music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",
+      space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.category] || "General");
+}
+
+function updatePlayerCount() {
+  const slider = $("playerCount");
+  const label = $("playerCountLabel");
+  if (!slider || !label) return;
+  const value = Math.max(3, Math.min(20, Number(slider.value) || 5));
+  slider.value = String(value);
+  label.textContent = String(value);
+}
+
+function startGame() {
+  const slider = $("playerCount");
+  const category = $("category");
+  const roundTime = $("roundTime");
+  if (!slider || !category || !roundTime) return;
+
+  state.players = Math.max(3, Math.min(20, Number(slider.value) || 5));
+  state.imposters = Math.max(1, Math.floor(Math.random() * Math.max(1, Math.floor(state.players / 3))) + 1);
+  state.category = WORDS[category.value] ? category.value : "mixed";
+  state.time = Math.max(30, Number(roundTime.value) || 90);
+
+  const list = WORDS[state.category] || WORDS.mixed;
+  state.word = list[Math.floor(Math.random() * list.length)];
+  state.roles = Array(state.players).fill(false);
+
+  const ids = Array.from({length: state.players}, (_, i) => i);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  ids.slice(0, state.imposters).forEach(i => state.roles[i] = true);
+
+  state.current = 0;
+  $("passName").textContent = "Player 1";
+  $("passNumber").textContent = "PLAYER 1";
+  show("pass");
+}
+
+function revealRole() {
+  const imp = !!state.roles[state.current];
+  $("roleIcon").textContent = imp ? "?" : "✓";
+  $("roleKicker").textContent = imp ? "YOU ARE" : "THE SECRET WORD IS";
+  $("roleTitle").textContent = imp ? "IMPOSTER" : "YOU ARE A REAL PLAYER";
+  $("wordBox").style.display = imp ? "none" : "block";
+  $("secretWord").textContent = state.word;
+  $("roleHint").textContent = imp
+    ? "Hint: " + getImposterHint(state.word) + " — Blend in, listen carefully, and figure out the exact word."
+    : "Describe the word without saying it or giving away too much.";
+  show("role");
+}
+
+function passRole() {
+  state.current++;
+  if (state.current < state.players) {
+    $("passName").textContent = "Player " + (state.current + 1);
+    $("passNumber").textContent = "PLAYER " + (state.current + 1);
+    show("pass");
+  } else {
+    startDiscussion();
+  }
+}
+
+function updateTimer() {
+  const minutes = Math.floor(state.timeLeft / 60);
+  const seconds = state.timeLeft % 60;
+  $("timer").textContent = minutes + ":" + String(seconds).padStart(2, "0");
+}
+
+function startDiscussion() {
+  clearInterval(state.timer);
+  state.timeLeft = state.time;
+  updateTimer();
+  show("play");
+  state.timer = setInterval(() => {
+    state.timeLeft--;
+    updateTimer();
+    if (state.timeLeft <= 0) showVote();
+  }, 1000);
+}
+
+function showVote() {
+  clearInterval(state.timer);
+  const grid = $("voteGrid");
+  grid.innerHTML = "";
+  state.voted = null;
+  $("revealBtn").disabled = true;
+
+  for (let i = 0; i < state.players; i++) {
+    const button = document.createElement("button");
+    button.className = "vote-btn";
+    button.textContent = "Player " + (i + 1);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".vote-btn").forEach(b => b.classList.remove("selected"));
+      button.classList.add("selected");
+      state.voted = i;
+      $("revealBtn").disabled = false;
+    });
+    grid.appendChild(button);
+  }
+  show("vote");
+}
+
+function revealVote() {
+  if (state.voted === null) return;
+  const isImp = !!state.roles[state.voted];
+  $("votedPlayer").textContent = "PLAYER " + (state.voted + 1);
+  $("resultMessage").innerHTML = isImp
+    ? "<strong>They were an IMPOSTER.</strong>"
+    : "<strong>They were NOT an imposter.</strong>";
+  $("imposterWinActions").classList.toggle("hidden", !isImp);
+  $("guessResult").classList.add("hidden");
+  $("guessInput").value = "";
+  $("nextRoundBtn").classList.toggle("hidden", isImp);
+  show("reveal");
+}
+
+function submitGuess() {
+  const guess = $("guessInput").value.trim();
+  if (!guess) return;
+  $("guessResult").classList.remove("hidden");
+  $("imposterWinActions").classList.add("hidden");
+  $("guessResult").textContent = guess.toLowerCase() === String(state.word).toLowerCase()
+    ? "🎯 Correct! The imposter wins the round."
+    : "❌ Wrong! The real players win. The word was “" + state.word + "”.";
+  $("nextRoundBtn").classList.remove("hidden");
+}
+
+function bindGame() {
+  const slider = $("playerCount");
+  if (slider) {
+    slider.addEventListener("input", updatePlayerCount);
+    slider.addEventListener("change", updatePlayerCount);
+    slider.addEventListener("pointermove", event => {
+      if (event.buttons) updatePlayerCount();
+    });
+  }
+
+  $("startBtn").addEventListener("click", startGame);
+  $("readyBtn").addEventListener("click", revealRole);
+  $("hideRoleBtn").addEventListener("click", passRole);
+  $("finishDiscussionBtn").addEventListener("click", showVote);
+  $("revealBtn").addEventListener("click", revealVote);
+  $("guessBtn").addEventListener("click", submitGuess);
+  $("nextRoundBtn").addEventListener("click", () => show("setup"));
+  $("resetBtn").addEventListener("click", () => {
+    clearInterval(state.timer);
+    state.timer = null;
+    show("setup");
+    updatePlayerCount();
+  });
+
+  updatePlayerCount();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bindGame);
+} else {
+  bindGame();
+}
