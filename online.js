@@ -56,9 +56,35 @@ function parseRoom(value){
   if(!raw)return "";
   try{const url=new URL(raw);const room=url.hash.match(/(?:^|[&#])room=([^&]+)/);if(room)return decodeURIComponent(room[1])}catch{}
   const match=raw.match(/(?:^|[?#&])room=([^&#]+)/);if(match)return decodeURIComponent(match[1]);
-  return raw.replace(/^room=/i,"").trim();
+  const direct=raw.replace(/^room=/i,"").trim();
+  if(validRoom(direct))return direct;
+  return decodeRoomCode(direct);
 }
 function validRoom(id){return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)}
+function encodeRoomCode(uuid){
+  try{
+    const hex=uuid.replace(/-/g,"").toLowerCase();
+    if(!/^[0-9a-f]{32}$/.test(hex))return "";
+    const bytes=Uint8Array.from(hex.match(/../g).map(x=>parseInt(x,16)));
+    let binary="";
+    bytes.forEach(b=>binary+=String.fromCharCode(b));
+    return btoa(binary).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");
+  }catch{return ""}
+}
+function decodeRoomCode(code){
+  try{
+    const clean=String(code||"").trim().replace(/-/g,"").replace(/_/g,"/");
+    if(!/^[A-Za-z0-9+/]{20,22}$/.test(clean))return "";
+    const padded=clean+"=".repeat((4-clean.length%4)%4);
+    const binary=atob(padded);
+    if(binary.length!==16)return "";
+    const hex=[...binary].map(ch=>ch.charCodeAt(0).toString(16).padStart(2,"0")).join("");
+    const uuid=hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+    return validRoom(uuid)?uuid:"";
+  }catch{return ""}
+}
+function displayRoomCode(uuid){return encodeRoomCode(uuid)||uuid}
+
 function setMode(host){
   $("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);
   $("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host);
@@ -86,7 +112,7 @@ function resetLocal(){
 function backHome(){resetLocal();showHostOnly(false);$("leaveBtn").textContent="↻";show("home")}
 function currentInvite(){const room=state.hostId||state.clientId;return window.location.href.split("#")[0]+"#room="+encodeURIComponent(room)}
 function renderLobby(){
-  $("roomCode").textContent=state.hostId||state.clientId;
+  $("roomCode").textContent=displayRoomCode(state.hostId||state.clientId);
   $("inviteLink").textContent=state.isHost?currentInvite():(state.hostId?window.location.href.split("#")[0]+"#room="+encodeURIComponent(state.hostId):"—");
   const list=getPlayerEntries();
   $("lobbyCount").textContent=list.length+" / "+state.settings.players;
@@ -488,6 +514,10 @@ function init(){
     $("leaveBtn").addEventListener("click",leaveRoom);$("retryBtn").addEventListener("click",backHome);
     const room=parseRoom(window.location.hash);
     if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
+    else{
+      const hashCode=String(window.location.hash||"").replace(/^#room=/,"");
+      if(decodeRoomCode(hashCode)){$("roomInput").value=decodeRoomCode(hashCode);setMode(false)}
+    }
   }catch(e){
     console.error("Online multiplayer startup failed:",e);
     setError("Online page failed to start",e?.message||String(e));
