@@ -4,16 +4,63 @@ const S={peer:null,directoryPeer:null,directoryConn:null,directoryOwner:false,di
 const PREFIX="imposter-",DIRECTORY_ID="imposter-public-directory",MAX=20,MIN=3;
 const PEER_OPTIONS={debug:2,config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}],sdpSemantics:"unified-plan"}};
 const CONNECT_TIMEOUT=15000;
-function show(x){screens.forEach(s=>$(s)?.classList.toggle("active",s===x));scrollTo(0,0)}function publicList(){const e=$("publicRoomList");if(!e)return;e.replaceChildren();const rooms=[...S.directoryRooms.values()].filter(r=>r&&r.host&&r.expires>Date.now()).sort((a,b)=>a.created-b.created);if(!rooms.length){const p=document.createElement("p");p.className="microcopy";p.textContent="No public rooms are open right now.";e.append(p);return}rooms.forEach(r=>{const row=document.createElement("div"),info=document.createElement("div"),strong=document.createElement("strong"),meta=document.createElement("span"),btn=document.createElement("button");row.className="public-room";info.className="public-room-info";strong.textContent=r.hostName||"Public Game";meta.textContent=(r.players||0)+" / "+(r.max||20)+" players · "+String(r.category||"mixed").toUpperCase();info.append(strong,meta);btn.className="small-btn";btn.type="button";btn.textContent="JOIN";btn.onclick=()=>{$("roomInput").value=r.code;mode(false);$("joinRoomBtn").click()};row.append(info,btn);e.append(row)})}
-function directorySnapshot(){return{type:"directory-list",rooms:[...S.directoryRooms.values()]}}
-function directorySendList(){const m=directorySnapshot();if(S.directoryOwner)S.directoryClients?.forEach(c=>send(c,m));else if(S.directoryConn)send(S.directoryConn,m);publicList()}
-function directoryRegister(){if(!S.publicRoom||!S.host)return;const old=S.directoryRooms.get(S.host),r={host:S.host,code:room(S.host),hostName:S.name,players:players().length,max:S.settings.players,category:S.settings.category,created:old?.created||Date.now(),expires:Date.now()+12000};if(S.directoryOwner){S.directoryRooms.set(S.host,r);directorySendList()}else if(S.directoryConn)send(S.directoryConn,{type:"directory-register",room:r})}
-function directoryUnregister(){if(!S.host)return;if(S.directoryOwner){S.directoryRooms.delete(S.host);directorySendList()}else if(S.directoryConn)send(S.directoryConn,{type:"directory-unregister",host:S.host})}
-function directoryBecomeOwner(){if(S.directoryPeer||!window.Peer)return;const p=new Peer(DIRECTORY_ID,PEER_OPTIONS);S.directoryPeer=p;p.on("open",()=>{S.directoryOwner=true;S.directoryClients=new Map;directorySendList()});p.on("connection",c=>{c.on("open",()=>{if(!S.directoryClients)S.directoryClients=new Map;S.directoryClients.set(c.peer,c);send(c,directorySnapshot())});c.on("data",m=>{if(m?.type==="directory-register"&&m.room){S.directoryRooms.set(m.room.host,m.room);directorySendList()}else if(m?.type==="directory-unregister"){S.directoryRooms.delete(m.host);directorySendList()}else if(m?.type==="directory-list-request")send(c,directorySnapshot())});c.on("close",()=>S.directoryClients?.delete(c.peer));c.on("error",()=>S.directoryClients?.delete(c.peer))});p.on("error",e=>{console.warn("[Imposter] public directory owner error",e.type);if(e.type==="unavailable-id"){try{p.destroy()}catch{};S.directoryPeer=null;S.directoryOwner=false;setTimeout(directoryJoin,250)}else if(!S.directoryOwner){try{p.destroy()}catch{};S.directoryPeer=null;setTimeout(directoryJoin,1000)}});p.on("disconnected",()=>{if(S.directoryOwner){S.directoryOwner=false;try{p.reconnect()}catch{S.directoryPeer=null;setTimeout(directoryJoin,500)}}})}
-function directoryJoin(){if(S.directoryOwner||S.directoryConn||!window.Peer)return;const p=new Peer(PEER_OPTIONS);S.directoryPeer=p;let retrying=false;const retry=()=>{if(retrying)return;retrying=true;try{p.destroy()}catch{};if(S.directoryPeer===p)S.directoryPeer=null;S.directoryConn=null;S.directoryOwner=false;setTimeout(directoryBecomeOwner,700)};p.on("open",()=>{const c=p.connect(DIRECTORY_ID,{reliable:true,serialization:"json"});S.directoryConn=c;c.on("open",()=>{retrying=false;send(c,{type:"directory-list-request"});publicList()});c.on("data",m=>{if(m?.type==="directory-list"){S.directoryRooms.clear();(m.rooms||[]).filter(r=>r&&r.host).forEach(r=>S.directoryRooms.set(r.host,r));publicList()}});c.on("close",()=>{S.directoryConn=null;S.directoryRooms.clear();publicList();retry()});c.on("error",e=>{console.warn("[Imposter] public directory connection error",e);retry()})});p.on("error",e=>{console.warn("[Imposter] public directory client error",e.type);if(!S.directoryOwner)retry()})}
-function directoryInit(){directoryBecomeOwner();setInterval(()=>{if(S.publicRoom)directoryRegister();if(S.directoryOwner){const now=Date.now();[...S.directoryRooms].forEach(([id,r])=>{if(r.expires<now)S.directoryRooms.delete(id)});directorySendList()}else if(!S.directoryConn&&!S.directoryPeer)directoryBecomeOwner();publicList()},3000)}
-
-
+function show(x){screens.forEach(s=>$(s)?.classList.toggle("active",s===x));scrollTo(0,0)}const SUPABASE_URL="https://dkwmkvruzebnqlmvwzhy.supabase.co";
+const SUPABASE_KEY="sb_publishable_Tur9X4MaQjH__4DnEtwAAQ_Xy9xVl5P";
+const supabaseClient=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);
+let publicRefreshId=null,publicHeartbeatId=null;
+async function publicList(){
+ const e=$("publicRoomList");if(!e)return;
+ try{
+  if(!supabaseClient)throw new Error("Public room service did not load.");
+  const {data,error}=await supabaseClient.from("public_rooms").select("host_id,room_code,host_name,player_count,max_players,category,expires_at,created_at").gt("expires_at",new Date().toISOString()).lt("player_count",21).order("created_at",{ascending:true});
+  if(error)throw error;
+  e.replaceChildren();
+  const rooms=(data||[]).filter(r=>r?.host_id&&r?.room_code&&new Date(r.expires_at).getTime()>Date.now());
+  if(!rooms.length){const p=document.createElement("p");p.className="microcopy";p.textContent="No public rooms are open right now.";e.append(p);return}
+  rooms.forEach(r=>{
+   const row=document.createElement("div"),info=document.createElement("div"),strong=document.createElement("strong"),meta=document.createElement("span"),btn=document.createElement("button");
+   row.className="public-room";info.className="public-room-info";strong.textContent=r.host_name||"Public Game";
+   meta.textContent=(r.player_count||0)+" / "+(r.max_players||20)+" players · "+String(r.category||"mixed").toUpperCase();
+   info.append(strong,meta);btn.className="small-btn";btn.type="button";btn.textContent="JOIN";
+   btn.onclick=()=>{$("roomInput").value=r.room_code;mode(false);$("joinRoomBtn").click()};
+   row.append(info,btn);e.append(row);
+  });
+ }catch(err){
+  console.warn("[Imposter] public room list error",err);
+  e.replaceChildren();
+  const p=document.createElement("p");p.className="microcopy";p.textContent="Public rooms are temporarily unavailable. Try REFRESH.";e.append(p);
+ }
+}
+function publicRoomPayload(){
+ if(!S.publicRoom||!S.host)return null;
+ return {
+  host_id:S.host,
+  room_code:room(S.host),
+  host_name:S.name||"Host",
+  player_count:players().length,
+  max_players:S.settings.players,
+  category:S.settings.category,
+  game_time:S.settings.time,
+  expires_at:new Date(Date.now()+15000).toISOString()
+ };
+}
+async function directoryRegister(){
+ const payload=publicRoomPayload();if(!payload||!supabaseClient)return;
+ const {error}=await supabaseClient.from("public_rooms").upsert(payload,{onConflict:"host_id"});
+ if(error)console.warn("[Imposter] public room heartbeat failed",error);
+}
+async function directoryUnregister(){
+ if(!S.host||!supabaseClient)return;
+ const {error}=await supabaseClient.from("public_rooms").delete().eq("host_id",S.host);
+ if(error)console.warn("[Imposter] public room removal failed",error);
+}
+function directoryInit(){
+ if(!supabaseClient){console.warn("[Imposter] Supabase client failed to load");publicList();return}
+ publicList();
+ clearInterval(publicRefreshId);clearInterval(publicHeartbeatId);
+ publicRefreshId=setInterval(publicList,5000);
+ publicHeartbeatId=setInterval(()=>{if(S.publicRoom&&S.host)directoryRegister()},5000);
+}
 function status(k,t,x){$("connectingKicker").textContent=k;$("connectingTitle").textContent=t;$("connectingText").textContent=x}
 function error(t,x){$("errorTitle").textContent=t;$("errorText").textContent=x;show("error")}
 function name(x){return String(x||"").trim().replace(/\s+/g," ").slice(0,24)}
@@ -30,7 +77,7 @@ function slider(){txt("onlinePlayerCountLabel",$("onlinePlayerCount").value)}
 function send(c,m){if(!c?.open)return false;try{c.send(m);return true}catch{return false}}
 function all(m){S.guest.forEach(c=>send(c,m))}
 function stop(){clearInterval(S.timerId);S.timerId=null}
-function closeAll(){directoryUnregister();stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;try{S.directoryConn?.close()}catch{};try{S.directoryPeer?.destroy()}catch{};S.directoryConn=null;S.directoryPeer=null;S.directoryOwner=false}
+function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;try{S.directoryConn?.close()}catch{};try{S.directoryPeer?.destroy()}catch{};S.directoryConn=null;S.directoryPeer=null;S.directoryOwner=false}
 function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
 function lobby(){
  txt("roomCode",room(S.host||S.id));txt("inviteLink",S.host?invite():"—");const ps=players();txt("lobbyCount",ps.length+" / "+S.settings.players);$("onlinePlayerList").replaceChildren();
@@ -118,6 +165,6 @@ function ready(){if(S.hostMode)return;const p=S.players.get(S.id);if(!p)return;c
 async function copy(){try{await navigator.clipboard.writeText(invite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{txt("inviteLink",invite())}}
 function create(){const n=name($("displayName").value);if(!n){alert("Enter your name first.");return}S.name=n;S.hostMode=true;S.publicRoom=$("publicRoomToggle").checked;S.settings={players:+$("onlinePlayerCount").value,category:$("onlineCategory").value,time:+$("onlineRoundTime").value};status("CONNECTING","CREATING ROOM","Connecting to the multiplayer service…");show("connecting");connectHost()}
 function join(){const n=name($("displayName").value),h=peerIdFrom($("roomInput").value);if(!n){alert("Enter your name first.");return}if(!h){alert("Enter a valid 8-character room code or invite link.");return}S.name=n;S.hostMode=false;S.publicRoom=false;S.host=h;S.phase="connecting";status("CONNECTING","JOINING ROOM","Connecting to the host…");show("connecting");connectGuest(h)}
-function init(){if(window.__impOnline)return;window.__impOnline=true;if(!window.Peer){error("Online multiplayer unavailable","The multiplayer library did not load. Refresh the page and try again.");return}mode(true);hostOnly(false);slider();directoryInit();publicList();$("onlinePlayerCount").oninput=slider;$("hostModeBtn").onclick=()=>mode(true);$("joinModeBtn").onclick=()=>mode(false);$("createRoomBtn").onclick=create;$("joinRoomBtn").onclick=join;$("refreshPublicBtn").onclick=()=>{if(S.directoryConn)send(S.directoryConn,{type:"directory-list-request"});publicList()};$("copyRoomBtn").onclick=copy;$("readyBtn").onclick=ready;$("startOnlineBtn").onclick=start;$("continueRoleBtn").onclick=continueRole;$("endDiscussionBtn").onclick=()=>openVote();$("submitVoteBtn").onclick=submitVote;$("hostRevealBtn").onclick=resolve;$("finalGuessBtn").onclick=guess;$("playAgainBtn").onclick=again;$("leaveBtn").onclick=home;$("retryBtn").onclick=home;const h=peerIdFrom(location.href);if(h){$("roomInput").value=location.href;mode(false)}}
+function init(){if(window.__impOnline)return;window.__impOnline=true;if(!window.Peer){error("Online multiplayer unavailable","The multiplayer library did not load. Refresh the page and try again.");return}mode(true);hostOnly(false);slider();directoryInit();publicList();$("onlinePlayerCount").oninput=slider;$("hostModeBtn").onclick=()=>mode(true);$("joinModeBtn").onclick=()=>mode(false);$("createRoomBtn").onclick=create;$("joinRoomBtn").onclick=join;$("refreshPublicBtn").onclick=()=>{publicList()};$("copyRoomBtn").onclick=copy;$("readyBtn").onclick=ready;$("startOnlineBtn").onclick=start;$("continueRoleBtn").onclick=continueRole;$("endDiscussionBtn").onclick=()=>openVote();$("submitVoteBtn").onclick=submitVote;$("hostRevealBtn").onclick=resolve;$("finalGuessBtn").onclick=guess;$("playAgainBtn").onclick=again;$("leaveBtn").onclick=home;$("retryBtn").onclick=home;const h=peerIdFrom(location.href);if(h){$("roomInput").value=location.href;mode(false)}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
