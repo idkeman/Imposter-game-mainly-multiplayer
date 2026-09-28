@@ -7,7 +7,7 @@ const CONNECT_TIMEOUT=15000;
 function show(x){screens.forEach(s=>$(s)?.classList.toggle("active",s===x));scrollTo(0,0)}const SUPABASE_URL="https://dkwmkvruzebnqlmvwzhy.supabase.co";
 const SUPABASE_KEY="sb_publishable_Tur9X4MaQjH__4DnEtwAAQ_Xy9xVl5P";
 const supabaseClient=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);
-let publicRefreshId=null,publicHeartbeatId=null;
+let publicRefreshId=null,publicHeartbeatId=null,helloRetryId=null;
 async function publicList(){
  const e=$("publicRoomList");if(!e)return;
  try{
@@ -78,7 +78,7 @@ function send(c,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"
 function sendTo(id,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:id}});return true}catch{return false}}
 function all(m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:null}});return true}catch{return false}}
 function stop(){clearInterval(S.timerId);S.timerId=null}
-function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.clear();try{if(S.roomChannel&&supabaseClient)supabaseClient.removeChannel(S.roomChannel)}catch{};S.roomChannel=null;try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
+function closeAll(){clearInterval(helloRetryId);helloRetryId=null;if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.clear();try{if(S.roomChannel&&supabaseClient)supabaseClient.removeChannel(S.roomChannel)}catch{};S.roomChannel=null;try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
 function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
 function lobby(){
  txt("roomCode",room(S.host||S.id));txt("inviteLink",S.host?invite():"—");const ps=players();txt("lobbyCount",ps.length+" / "+S.settings.players);$("onlinePlayerList").replaceChildren();
@@ -102,16 +102,16 @@ function beginTimer(){stop();S.timer=+S.settings.time||90;timerUI();all({type:"t
 async function openRoomChannel(hostId){
  if(!supabaseClient)throw new Error("The room service did not load.");
  const topic="imposter-room:"+String(hostId).toLowerCase();
- const ch=supabaseClient.channel(topic,{config:{broadcast:{self:false}}});
+ const ch=supabaseClient.channel(topic,{config:{private:false,broadcast:{self:false,ack:true}}});
  ch.on("broadcast",{event:"game"},({payload})=>{if(!payload||payload.to&&payload.to!==S.id)return;if(S.hostMode)hostMsg({peer:payload.from},payload);else guestMsg(payload)});
- await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Room server connection timed out.")),CONNECT_TIMEOUT);ch.subscribe(status=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve()}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){clearTimeout(timer);reject(new Error("Could not open the room connection."))}})});
+ await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Room server connection timed out.")),CONNECT_TIMEOUT);ch.subscribe((status,err)=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve()}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){clearTimeout(timer);console.warn("[Imposter] Realtime subscribe failed",status,err);reject(new Error(err?.message||("Realtime channel status: "+status)))}})});
  S.roomChannel=ch;return ch;
 }
 async function connectHost(){try{const id=PREFIX+code().toLowerCase();S.id=S.host=id;S.hostMode=true;status("CONNECTED","CREATING ROOM","Opening the room connection…");await openRoomChannel(id);S.players.set(id,{id,name:S.name,isHost:true,ready:true,connected:true});hostOnly(true);lobby();show("lobby")}catch(e){console.warn("[Imposter] host room error",e);error("Could not create room",e.message||"The room service could not be reached.")}}
-async function connectGuest(host){try{S.id="guest-"+Math.random().toString(36).slice(2,10);S.host=host;status("CONNECTED","FOUND ROOM","Opening the game connection…");await openRoomChannel(host);status("CONNECTED","JOINED ROOM","Waiting for the host…");sendTo(host,{type:"hello",name:S.name})}catch(e){console.warn("[Imposter] guest room error",e);error("Could not join room",e.message||"The room service could not be reached.")}}
+async function connectGuest(host){try{clearInterval(helloRetryId);S.id="guest-"+Math.random().toString(36).slice(2,10);S.host=host;status("CONNECTED","FOUND ROOM","Opening the game connection…");await openRoomChannel(host);status("CONNECTED","JOINED ROOM","Waiting for the host…");const hello=()=>{if(S.phase!=="connecting"&&S.phase!=="lobby")return;const ok=sendTo(host,{type:"hello",name:S.name});if(!ok)console.warn("[Imposter] hello could not be queued")};hello();helloRetryId=setInterval(hello,2000)}catch(e){clearInterval(helloRetryId);console.warn("[Imposter] guest room error",e);error("Could not join room",e.message||"The room service could not be reached.")}}
 function hostMsg(c,m){const id=c.peer;if(m.type==="hello"){if(S.game){sendTo(id,{type:"busy"});return}if(players().length>=S.settings.players){sendTo(id,{type:"full"});return}S.players.set(id,{id,name:name(m.name)||"Player",isHost:false,ready:false,connected:true});sendTo(id,{type:"accepted",settings:S.settings,host:S.host});sync();return}const p=S.players.get(id);if(!p)return;if(m.type==="ready"){if(!S.game){p.ready=!!m.ready;sync()}return}if(m.type==="vote"&&S.phase==="vote"){const ok=(S.voteCandidates||players().map(x=>x.id)).includes(m.candidate)&&m.candidate!==id;if(ok){S.votes.set(id,m.candidate);voteStatus();if(S.votes.size>=players().length)resolve()}return}if(m.type==="guess"&&S.phase==="guess"&&id===S.selected){finish(m.guess.trim().toLowerCase()===S.word.toLowerCase(),"Final guess: "+m.guess,S.word)}}
 function guestMsg(m){
- if(m.type==="accepted"){S.settings={...S.settings,...m.settings};S.host=m.host;return}
+ if(m.type==="accepted"){clearInterval(helloRetryId);helloRetryId=null;S.settings={...S.settings,...m.settings};S.host=m.host;return}
  if(m.type==="lobby"){S.settings={...S.settings,...m.settings};S.players.clear();m.players.forEach(p=>S.players.set(p.id,p));lobby();show("lobby");return}
  if(m.type==="game-start"){S.game=true;S.settings={...S.settings,...m.settings};S.players.clear();m.players.forEach(p=>S.players.set(p.id,p));show("role");return}
  if(m.type==="role"){S.role=m.role;S.word=m.word||"";S.hint=m.hint||"General";roleUI();return}
