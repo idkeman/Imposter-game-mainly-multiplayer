@@ -56,7 +56,10 @@ function showHostOnly(show){document.querySelectorAll(".host-only").forEach(e=>e
 function roleHint(){return typeof window.IMPOSTER_HINT_FOR==="function"?window.IMPOSTER_HINT_FOR(state.privateWord):({food:"Food",animals:"Animal",places:"Place",objects:"Object",activities:"Activity",nature:"Nature",school:"School",sports:"Sport",movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.settings.category]||"General")}
 function getPlayerEntries(){return [...state.players.values()].filter(p=>p.connected!==false)}
 function playerName(id){return state.players.get(id)?.name||"Player"}
-function send(wsMessage){if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify(wsMessage))}
+function send(wsMessage){
+  if(state.ws?.readyState===WebSocket.OPEN){state.ws.send(JSON.stringify(wsMessage));return true}
+  return false
+}
 function closePeer(peer){try{peer.dc?.close()}catch{}try{peer.pc?.close()}catch{}}
 function cleanupNetwork(){
   clearInterval(state.timerId);state.timerId=null;
@@ -145,7 +148,18 @@ class NetplaySignal{
     state.isHost=false;state.hostId=hostId;showHostOnly(false);
     if(!validRoom(hostId))throw new Error("That room ID is not a valid NetplayJS client ID.");
     setStatus("JOINING ROOM","CONNECTING TO HOST","Negotiating a secure WebRTC data channel…");show("connecting");
-    await this.makePeer(hostId,true);
+    const peer=await this.makePeer(hostId,true);
+    if(!peer)throw new Error("Could not create the browser connection.");
+    showJoinProgress("Offer sent. Waiting for the host to accept the connection…");
+    await new Promise((resolve,reject)=>{
+      const started=Date.now();
+      const check=()=>{
+        if(state.peers.get(hostId)?.dc?.readyState==="open"){resolve();return}
+        if(Date.now()-started>=15000){reject(new Error("The host did not accept the connection within 15 seconds."));return}
+        setTimeout(check,250);
+      };
+      check();
+    });
   }
   async makePeer(peerId,initiator){
     if(state.peers.has(peerId))return state.peers.get(peerId);
@@ -175,10 +189,15 @@ class NetplaySignal{
   }
   bindDataChannel(peer){
     peer.dc.binaryType="arraybuffer";
+    peer.dc.onopenerror=null;
     peer.dc.onopen=()=>{
       clearTimeout(peer.timeoutId);
-      if(!state.isHost)sendPeer(peer,{type:"hello",name:state.name,clientId:state.clientId});
-      else this.acceptPeer(peer);
+      if(!state.isHost){
+        showJoinProgress("Secure connection established. Waiting for the host lobby…");
+        sendPeer(peer,{type:"hello",name:state.name,clientId:state.clientId});
+      }else{
+        this.acceptPeer(peer);
+      }
     };
     peer.dc.onmessage=e=>{
       let msg;try{msg=JSON.parse(typeof e.data==="string"?e.data:new TextDecoder().decode(e.data))}catch{return}
@@ -191,7 +210,10 @@ class NetplaySignal{
   }
   handleServerMessage(msg){
     if(msg.kind==="server-error")setError("NetplayJS server error",msg.reason);
-    else if(msg.kind==="send-message-failure")setError("Could not reach player",msg.reason);
+    else if(msg.kind==="send-message-failure"){
+      const destination=msg.destinationID===state.hostId?"the host":"the requested player";
+      setError("Could not reach "+destination,msg.reason||"The signaling server could not deliver the connection message.");
+    }
     else if(msg.kind==="peer-message"){
       let peer=state.peers.get(msg.sourceID);
       if(!peer){this.makePeer(msg.sourceID,false).catch(e=>setError("Peer setup failed",e.message))}
@@ -233,6 +255,7 @@ function sendPeer(peer,msg){
   if(peer?.dc?.readyState==="open"){peer.dc.send(JSON.stringify(msg));return true}
   return false;
 }
+function showJoinProgress(text){if(!state.isHost&&state.phase==="home")setStatus("JOINING ROOM","CONNECTING TO HOST",text)}
 function sendToAllPeers(msg){for(const peer of state.peers.values())sendPeer(peer,msg)}
 function broadcastLobby(){const payload={type:"lobby",settings:state.settings,players:getPlayerEntries().map(p=>({id:p.id,name:p.name,isHost:p.isHost,ready:p.ready}))};sendToAllPeers(payload);renderLobby()}
 function syncPublic(msg){sendToAllPeers(msg)}
