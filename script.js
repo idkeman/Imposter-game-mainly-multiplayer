@@ -26,7 +26,8 @@ const $ = id => document.getElementById(id);
 
 const state = {
   players: 5, imposters: 1, category: "mixed", time: 90, timeLeft: 90,
-  word: "", roles: [], current: 0, voted: null, timer: null, started: false
+  word: "", roles: [], current: 0, voted: null, timer: null, started: false,
+  playerNames: []
 };
 
 function el(id) { return document.getElementById(id); }
@@ -37,6 +38,39 @@ function showScreen(id) {
   if (target) target.classList.add("active");
 }
 
+function renderPlayerNameInputs(count) {
+  const container=el("nameInputs"), section=el("playerNamesSection"), countLabel=el("namesCount");
+  if(!container)return;
+  const previous=[...state.playerNames];
+  state.playerNames=Array.from({length:count},(_,i)=>{
+    const saved=String(previous[i]||"").trim();
+    return saved||"Player "+(i+1);
+  });
+  container.replaceChildren();
+  for(let i=0;i<count;i++){
+    const wrap=document.createElement("div");
+    wrap.className="name-field";
+    const label=document.createElement("label");
+    label.htmlFor="playerName"+i;
+    label.textContent="Player "+(i+1);
+    const input=document.createElement("input");
+    input.id="playerName"+i;
+    input.type="text";
+    input.maxLength=24;
+    input.autocomplete="off";
+    input.placeholder="Enter name";
+    input.value=state.playerNames[i];
+    input.addEventListener("input",()=>{
+      state.playerNames[i]=input.value;
+    });
+    wrap.appendChild(label);
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  }
+  if(countLabel)countLabel.textContent=count+" player"+(count===1?"":"s");
+  if(section)section.classList.remove("hidden");
+}
+
 function updatePlayerCount() {
   const slider = el("playerCount");
   const label = el("playerCountLabel");
@@ -45,6 +79,7 @@ function updatePlayerCount() {
   if (!Number.isFinite(value)) return;
   state.players = Math.max(3, Math.min(20, value));
   label.textContent = state.players;
+  renderPlayerNameInputs(state.players);
 }
 
 function hintFor(word) {
@@ -88,6 +123,10 @@ function startGame() {
 
   updatePlayerCount();
   state.players=Math.max(3,Math.min(20,Number(slider.value)||5));
+  state.playerNames=Array.from({length:state.players},(_,i)=>{
+    const value=String(state.playerNames[i]||"").trim();
+    return value||"Player "+(i+1);
+  });
   state.category=category.value||"mixed";
   state.time=Math.max(10,Number(roundTime.value)||90);
   state.timeLeft=state.time;
@@ -107,8 +146,8 @@ function startGame() {
     .slice(0,state.imposters)
     .forEach(i=>state.roles[i]=true);
 
-  el("passName").textContent="Player 1";
-  el("passNumber").textContent="PLAYER 1";
+  el("passName").textContent=state.playerNames[0];
+  el("passNumber").textContent=state.playerNames[0].toUpperCase();
   showScreen("pass");
 }
 
@@ -130,8 +169,8 @@ function nextPlayer() {
   if (!state.started) return;
   state.current++;
   if (state.current<state.players) {
-    el("passName").textContent="Player "+(state.current+1);
-    el("passNumber").textContent="PLAYER "+(state.current+1);
+    el("passName").textContent=state.playerNames[state.current];
+    el("passNumber").textContent=state.playerNames[state.current].toUpperCase();
     showScreen("pass");
   } else {
     startDiscussion();
@@ -165,7 +204,7 @@ function showVoting() {
   reveal.disabled=true;
   for(let i=0;i<state.players;i++){
     const b=document.createElement("button");
-    b.type="button"; b.className="vote-btn"; b.textContent="Player "+(i+1);
+    b.type="button"; b.className="vote-btn"; b.textContent=state.playerNames[i];
     b.addEventListener("click",()=>{
       grid.querySelectorAll(".vote-btn").forEach(x=>x.classList.remove("selected"));
       b.classList.add("selected"); state.voted=i; reveal.disabled=false;
@@ -178,7 +217,7 @@ function showVoting() {
 function revealVote() {
   if(state.voted===null)return;
   const caught=!!state.roles[state.voted];
-  el("votedPlayer").textContent="PLAYER "+(state.voted+1);
+  el("votedPlayer").textContent=String(state.playerNames[state.voted]||("Player "+(state.voted+1))).toUpperCase();
   el("resultMessage").innerHTML=caught?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";
   el("imposterWinActions").classList.toggle("hidden",!caught);
   el("guessResult").classList.add("hidden");
