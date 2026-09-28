@@ -1,6 +1,6 @@
 (()=>{"use strict";
 const $=id=>document.getElementById(id),screens=["home","connecting","lobby","role","discussion","vote","result","error"];
-const S={peer:null,publicRoom:false,hostConn:null,guest:new Map(),id:"",host:"",hostMode:false,name:"",settings:{players:5,category:"mixed",time:90},players:new Map(),roles:{},word:"",role:"",hint:"",phase:"home",timer:0,timerId:null,voteCandidates:null,votes:new Map(),selectedVote:null,voteRound:0,selected:null,game:false};
+const S={peer:null,roomChannel:null,publicRoom:false,hostConn:null,guest:new Map(),id:"",host:"",hostMode:false,name:"",settings:{players:5,category:"mixed",time:90},players:new Map(),roles:{},word:"",role:"",hint:"",phase:"home",timer:0,timerId:null,voteCandidates:null,votes:new Map(),selectedVote:null,voteRound:0,selected:null,game:false};
 const PREFIX="imposter-",MAX=20,MIN=3;
 const PEER_OPTIONS={debug:2,config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}],sdpSemantics:"unified-plan"}};
 const CONNECT_TIMEOUT=15000;
@@ -74,10 +74,11 @@ function txt(id,v){const e=$(id);if(e)e.textContent=v}
 function mode(host){$("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);$("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host)}
 function hostOnly(v){document.querySelectorAll(".host-only").forEach(e=>e.classList.toggle("hidden",!v))}
 function slider(){txt("onlinePlayerCountLabel",$("onlinePlayerCount").value)}
-function send(c,m){if(!c?.open)return false;try{c.send(m);return true}catch{return false}}
-function all(m){S.guest.forEach(c=>send(c,m))}
+function send(c,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:c?.peer||m?.to||null}});return true}catch{return false}}
+function sendTo(id,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:id}});return true}catch{return false}}
+function all(m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:null}});return true}catch{return false}}
 function stop(){clearInterval(S.timerId);S.timerId=null}
-function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
+function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.clear();try{if(S.roomChannel&&supabaseClient)supabaseClient.removeChannel(S.roomChannel)}catch{};S.roomChannel=null;try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
 function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
 function lobby(){
  txt("roomCode",room(S.host||S.id));txt("inviteLink",S.host?invite():"—");const ps=players();txt("lobbyCount",ps.length+" / "+S.settings.players);$("onlinePlayerList").replaceChildren();
@@ -98,16 +99,19 @@ function start(){
  all({type:"game-start",settings:S.settings,players:ps});ps.forEach(p=>{if(p.id!==S.id)send(S.guest.get(p.id),{type:"role",role:S.roles[p.id],word:S.roles[p.id]==="real"?S.word:"",hint:hint(S.word)})});roleUI()
 }
 function beginTimer(){stop();S.timer=+S.settings.time||90;timerUI();all({type:"timer",seconds:S.timer});S.timerId=setInterval(()=>{S.timer--;timerUI();all({type:"timer",seconds:S.timer});if(S.timer<=0){stop();openVote()}},1000)}
-function connectHost(){
- const id=PREFIX+code().toLowerCase();S.peer=new Peer(id,PEER_OPTIONS);
- S.peer.on("open",x=>{S.id=S.host=x;S.hostMode=true;S.players.set(x,{id:x,name:S.name,isHost:true,ready:true,connected:true});hostOnly(true);lobby();show("lobby")});
- S.peer.on("connection",c=>{c.on("open",()=>{S.guest.set(c.peer,c);send(c,{type:"hello"})});c.on("data",m=>hostMsg(c,m));c.on("close",()=>{S.guest.delete(c.peer);S.players.delete(c.peer);if(!S.game)sync()})});
- S.peer.on("error",e=>{console.warn("[Imposter] host PeerJS error",e.type,e);if(e.type==="unavailable-id"){try{S.peer.destroy()}catch{};S.peer=null;setTimeout(connectHost,250)}else if(!S.id)error("Could not create room",e.message||"The multiplayer service could not be reached.")});
- S.peer.on("disconnected",()=>{if(S.game)error("Connection lost","The multiplayer connection was lost. Create a new room.")})
+async function openRoomChannel(hostId){
+ if(!supabaseClient)throw new Error("The room service did not load.");
+ const topic="imposter-room:"+String(hostId).toLowerCase();
+ const ch=supabaseClient.channel(topic,{config:{broadcast:{self:false}}});
+ ch.on("broadcast",{event:"game"},({payload})=>{if(!payload||payload.to&&payload.to!==S.id)return;if(S.hostMode)hostMsg({peer:payload.from},payload);else guestMsg(payload)});
+ await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Room server connection timed out.")),CONNECT_TIMEOUT);ch.subscribe(status=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve()}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){clearTimeout(timer);reject(new Error("Could not open the room connection."))}})});
+ S.roomChannel=ch;return ch;
 }
+async function connectHost(){try{const id=PREFIX+code().toLowerCase();S.id=S.host=id;S.hostMode=true;status("CONNECTED","CREATING ROOM","Opening the room connection…");await openRoomChannel(id);S.players.set(id,{id,name:S.name,isHost:true,ready:true,connected:true});hostOnly(true);lobby();show("lobby")}catch(e){console.warn("[Imposter] host room error",e);error("Could not create room",e.message||"The room service could not be reached.")}}
+async function connectGuest(host){try{S.id="guest-"+Math.random().toString(36).slice(2,10);S.host=host;status("CONNECTED","FOUND ROOM","Opening the game connection…");await openRoomChannel(host);status("CONNECTED","JOINED ROOM","Waiting for the host…");sendTo(host,{type:"hello",name:S.name})}catch(e){console.warn("[Imposter] guest room error",e);error("Could not join room",e.message||"The room service could not be reached.")}}
 function hostMsg(c,m){
  const id=c.peer;
- if(m.type==="hello"){if(S.game){send(c,{type:"busy"});c.close();return}if(players().length>=S.settings.players){send(c,{type:"full"});c.close();return}S.players.set(id,{id,name:name(m.name)||"Player",isHost:false,ready:false,connected:true});send(c,{type:"accepted",settings:S.settings,host:S.host});sync();return}
+ if(m.type==="hello"){if(S.game){sendTo(id,{type:"busy"});c.close();return}if(players().length>=S.settings.players){sendTo(id,{type:"full"});c.close();return}S.players.set(id,{id,name:name(m.name)||"Player",isHost:false,ready:false,connected:true});sendTo(id,{type:"accepted",settings:S.settings,host:S.host});sync();return}
  const p=S.players.get(id);if(!p)return;
  if(m.type==="ready"){if(!S.game){p.ready=!!m.ready;sync()}return}
  if(m.type==="vote"&&S.phase==="vote"){const ok=(S.voteCandidates||players().map(x=>x.id)).includes(m.candidate)&&m.candidate!==id;if(ok){S.votes.set(id,m.candidate);voteStatus();if(S.votes.size>=players().length)resolve()};return}
@@ -151,17 +155,17 @@ function renderVote(cands,revote){
  S.voteCandidates.filter(id=>id!==S.id).forEach(id=>{const b=document.createElement("button");b.type="button";b.className="vote-option";b.textContent=pname(id);b.onclick=()=>{document.querySelectorAll(".vote-option").forEach(x=>x.classList.remove("selected"));b.classList.add("selected");S.selectedVote=id;$("submitVoteBtn").disabled=false};$("onlineVoteGrid").append(b)});txt("voteStatus","Choose a player, then submit your vote.");show("vote")
 }
 function openVote(cands=null,revote=false){if(!S.hostMode)return;stop();S.votes.clear();S.voteCandidates=cands||players().map(p=>p.id);all({type:"vote-open",candidates:S.voteCandidates,revote});renderVote(S.voteCandidates,revote)}
-function submitVote(){if(!S.selectedVote)return;if(S.hostMode){S.votes.set(S.id,S.selectedVote);$("submitVoteBtn").disabled=true;voteStatus();if(S.votes.size>=players().length)resolve()}else if(send(S.hostConn,{type:"vote",candidate:S.selectedVote})){$("submitVoteBtn").disabled=true;txt("voteStatus","Vote submitted. Waiting for the reveal…")}else error("Connection lost","Your vote could not reach the host.")}
+function submitVote(){if(!S.selectedVote)return;if(S.hostMode){S.votes.set(S.id,S.selectedVote);$("submitVoteBtn").disabled=true;voteStatus();if(S.votes.size>=players().length)resolve()}else if(sendTo(S.host,{type:"vote",candidate:S.selectedVote})){$("submitVoteBtn").disabled=true;txt("voteStatus","Vote submitted. Waiting for the reveal…")}else error("Connection lost","Your vote could not reach the host.")}
 function voteStatus(){txt("voteStatus",S.votes.size+" / "+players().length+" votes submitted.")}
 function resolve(){if(!S.hostMode||S.phase!=="vote")return;const counts={};S.votes.forEach(v=>counts[v]=(counts[v]||0)+1);const max=Math.max(...Object.values(counts));const tied=Object.keys(counts).filter(x=>counts[x]===max);if(tied.length>1&&S.voteRound<2){S.voteRound++;openVote(tied,true);return}reveal(tied[0],counts)}
 function reveal(id,counts){const caught=S.roles[id]==="imposter";S.selected=id;S.phase=caught?"guess":"finished";all({type:"vote-result",selected:id,counts,caught});result(id,counts,caught);if(!caught)finish(false,"The group voted for the wrong player.",S.word);else if(id===S.id)showGuess()}
 function result(id,counts,caught){txt("resultPlayer",pname(id).toUpperCase());$("onlineResultMessage").innerHTML=caught?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";$("voteCounts").replaceChildren();Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([id,n])=>{const r=document.createElement("div"),s=document.createElement("span"),b=document.createElement("strong");r.className="vote-count";s.textContent=pname(id);b.textContent=n;r.append(s,b);$("voteCounts").append(r)});$("finalGuessArea").classList.toggle("hidden",!caught);$("finishedArea").classList.toggle("hidden",caught);if(caught){txt("finalGuessInstruction",S.selected===S.id?"You were caught. Guess the secret word for a chance to win.":pname(S.selected)+" gets one final guess at the secret word.");$("guessInputRow").classList.toggle("hidden",S.selected!==S.id)}show("result")}
 function showGuess(){$("guessInputRow").classList.remove("hidden");$("finalGuessInput").focus()}
-function guess(){const g=$("finalGuessInput").value.trim();if(!g)return;if(S.hostMode)finish(g.toLowerCase()===S.word.toLowerCase(),"Final guess: "+g,S.word);else if(send(S.hostConn,{type:"guess",guess:g})){$("guessInputRow").classList.add("hidden");txt("finalGuessInstruction","Guess submitted. Waiting for the result…")}else error("Connection lost","Your guess could not reach the host.")}
+function guess(){const g=$("finalGuessInput").value.trim();if(!g)return;if(S.hostMode)finish(g.toLowerCase()===S.word.toLowerCase(),"Final guess: "+g,S.word);else if(sendTo(S.host,{type:"guess",guess:g})){$("guessInputRow").classList.add("hidden");txt("finalGuessInstruction","Guess submitted. Waiting for the result…")}else error("Connection lost","Your guess could not reach the host.")}
 function finish(win,msg,w){if(!S.hostMode)return;stop();S.phase="finished";all({type:"finish",win,message:msg,word:w});finished(win,msg,w)}
 function finished(win,msg,w){S.phase="finished";$("finalGuessArea").classList.add("hidden");$("finishedArea").classList.remove("hidden");$("onlineFinalResult").textContent=(win?"THE IMPOSTER WINS. ":"THE REAL PLAYERS WIN. ")+msg+" The word was “"+w+"”.";show("result")}
 function again(){stop();S.game=false;S.phase="lobby";S.role="";S.word="";S.hint="";S.roles={};S.votes.clear();S.voteRound=0;S.selected=null;if(S.hostMode){S.players.forEach(p=>p.ready=p.isHost);sync()}show("lobby")}
-function ready(){if(S.hostMode)return;const p=S.players.get(S.id);if(!p)return;const v=!p.ready;if(send(S.hostConn,{type:"ready",ready:v})){p.ready=v;lobby()}else error("Connection lost","Your ready status could not reach the host.")}
+function ready(){if(S.hostMode)return;const p=S.players.get(S.id);if(!p)return;const v=!p.ready;if(sendTo(S.host,{type:"ready",ready:v})){p.ready=v;lobby()}else error("Connection lost","Your ready status could not reach the host.")}
 async function copy(){try{await navigator.clipboard.writeText(invite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{txt("inviteLink",invite())}}
 function create(){const n=name($("displayName").value);if(!n){alert("Enter your name first.");return}S.name=n;S.hostMode=true;S.publicRoom=$("publicRoomToggle").checked;S.settings={players:+$("onlinePlayerCount").value,category:$("onlineCategory").value,time:+$("onlineRoundTime").value};status("CONNECTING","CREATING ROOM","Connecting to the multiplayer service…");show("connecting");connectHost()}
 function joinPeer(hostId,displayCode){const n=name($("displayName").value);const h=peerIdFrom(hostId)||peerIdFrom(displayCode);if(!n){alert("Enter your name first.");return}if(!h){alert("That public room is no longer reachable. Refresh the public-room list and try again.");return}S.name=n;S.hostMode=false;S.publicRoom=false;S.host=h;S.phase="connecting";status("CONNECTING","JOINING ROOM","Connecting to the host…");show("connecting");connectGuest(h)}
