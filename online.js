@@ -6,8 +6,26 @@
   protocol directly so this DOM-based game can support 3–20 players and
   send private role messages to individual peers.
 */
-const NETPLAY_SERVER_URL="https://netplayjs.varunramesh.net";
-const NETPLAY_WS_URL="wss://netplayjs.varunramesh.net/";
+const DEFAULT_NETPLAY_SERVER_URL="https://netplayjs.varunramesh.net";
+function getServerUrl(){
+  try{
+    const match=window.location.hash.match(/(?:^|[&#])server=([^&]+)/);
+    return match?decodeURIComponent(match[1]):DEFAULT_NETPLAY_SERVER_URL;
+  }catch{return DEFAULT_NETPLAY_SERVER_URL}
+}
+function getWebSocketUrl(serverUrl){
+  try{
+    const url=new URL(serverUrl);
+    url.protocol=url.protocol==="http:"?"ws:":"wss:";
+    url.port="";
+    url.pathname="/";
+    url.search="";
+    url.hash="";
+    return url.toString();
+  }catch{return "wss://netplayjs.varunramesh.net/"}
+}
+const NETPLAY_SERVER_URL=getServerUrl();
+const NETPLAY_WS_URL=getWebSocketUrl(NETPLAY_SERVER_URL);
 const state={
   connection:null,ws:null,clientId:"",hostId:"",isHost:false,name:"",
   players:new Map(),peers:new Map(),privateRole:null,privateWord:"",privateHint:"",
@@ -33,7 +51,7 @@ function setMode(host){
   $("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);
   $("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host);
 }
-function updatePlayerSlider(){ $("onlinePlayerCountLabel").textContent=$("onlinePlayerCount").value }
+function updatePlayerSlider(){const input=$("onlinePlayerCount"),label=$("onlinePlayerCountLabel");if(!input||!label)return;label.textContent=input.value}
 function showHostOnly(show){document.querySelectorAll(".host-only").forEach(e=>e.classList.toggle("hidden",!show))}
 function roleHint(){return typeof window.IMPOSTER_HINT_FOR==="function"?window.IMPOSTER_HINT_FOR(state.privateWord):({food:"Food",animals:"Animal",places:"Place",objects:"Object",activities:"Activity",nature:"Nature",school:"School",sports:"Sport",movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.settings.category]||"General")}
 function getPlayerEntries(){return [...state.players.values()].filter(p=>p.connected!==false)}
@@ -51,7 +69,7 @@ function resetLocal(){
   state.myVote=null;state.votes.clear();state.voteRound=0;state.candidates=null;state.selectedPlayer=null;state.gameStarted=false;state.phase="home";
 }
 function backHome(){resetLocal();showHostOnly(false);$("leaveBtn").textContent="↻";show("home")}
-function currentInvite(){return window.location.href.split("#")[0]+"#room="+encodeURIComponent(state.clientId)}
+function currentInvite(){const room=state.hostId||state.clientId;return window.location.href.split("#")[0]+"#room="+encodeURIComponent(room)}
 function renderLobby(){
   $("roomCode").textContent=state.hostId||state.clientId;
   $("inviteLink").textContent=state.isHost?currentInvite():(state.hostId?window.location.href.split("#")[0]+"#room="+encodeURIComponent(state.hostId):"—");
@@ -113,12 +131,15 @@ class NetplaySignal{
   async makePeer(peerId,initiator){
     if(state.peers.has(peerId))return state.peers.get(peerId);
     const pc=new RTCPeerConnection({iceServers:state.connection||[]});
-    const peer={id:peerId,pc,dc:null,initiator,pendingCandidates:[]};
+    const peer={id:peerId,pc,dc:null,initiator,pendingCandidates:[],timeoutId:null};
+    peer.timeoutId=setTimeout(()=>{if(pc.connectionState!=="connected"){try{pc.close()}catch{}state.peers.delete(peerId);if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}else setError("Could not connect to host","The WebRTC connection timed out. Make sure both devices are online and try again.");}},15000);
     state.peers.set(peerId,peer);
     pc.onicecandidate=e=>{if(e.candidate)send({kind:"send-message",type:"candidate",destinationID:peerId,payload:e.candidate.toJSON?e.candidate.toJSON():e.candidate})};
     pc.onconnectionstatechange=()=>{
+      if(pc.connectionState==="connected")clearTimeout(peer.timeoutId);
       if(["failed","closed"].includes(pc.connectionState)){
         closePeer(peer);state.peers.delete(peerId);
+        clearTimeout(peer.timeoutId);
         if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}
         else setError("Host connection lost","The host left or the peer connection failed. Return home and join a new room.");
       }
@@ -136,6 +157,7 @@ class NetplaySignal{
   bindDataChannel(peer){
     peer.dc.binaryType="arraybuffer";
     peer.dc.onopen=()=>{
+      clearTimeout(peer.timeoutId);
       if(!state.isHost)sendPeer(peer,{type:"hello",name:state.name,clientId:state.clientId});
       else this.acceptPeer(peer);
     };
@@ -143,7 +165,7 @@ class NetplaySignal{
       let msg;try{msg=JSON.parse(typeof e.data==="string"?e.data:new TextDecoder().decode(e.data))}catch{return}
       this.handlePeerMessage(peer,msg);
     };
-    peer.dc.onclose=()=>{closePeer(peer);state.peers.delete(peer.id);if(state.isHost){const p=state.players.get(peer.id);if(p){p.connected=false;broadcastLobby()}}};
+    peer.dc.onclose=()=>{clearTimeout(peer.timeoutId);closePeer(peer);state.peers.delete(peer.id);if(state.isHost){const p=state.players.get(peer.id);if(p){p.connected=false;broadcastLobby()}}};
   }
   acceptPeer(peer){
     sendPeer(peer,{type:"host-accepted",settings:state.settings});
@@ -189,7 +211,8 @@ class NetplaySignal{
 }
 state.net=null;
 function sendPeer(peer,msg){
-  if(peer?.dc?.readyState==="open")peer.dc.send(JSON.stringify(msg));
+  if(peer?.dc?.readyState==="open"){peer.dc.send(JSON.stringify(msg));return true}
+  return false;
 }
 function sendToAllPeers(msg){for(const peer of state.peers.values())sendPeer(peer,msg)}
 function broadcastLobby(){const payload={type:"lobby",settings:state.settings,players:getPlayerEntries().map(p=>({id:p.id,name:p.name,isHost:p.isHost,ready:p.ready}))};sendToAllPeers(payload);renderLobby()}
@@ -249,7 +272,7 @@ function renderVoting(candidates,revote){
     grid.appendChild(b);
   });
   $("submitVoteBtn").disabled=state.myVote===null;
-  $("hostRevealBtn").classList.toggle("hidden",!state.isHost);show("vote");
+  $("hostRevealBtn").classList.toggle("hidden",!state.isHost);$("hostRevealBtn").disabled=!state.isHost||state.votes.size<getPlayerEntries().length;show("vote");
 }
 function submitVote(){
   if(state.myVote===null)return;
@@ -284,7 +307,7 @@ function showGuessPrompt(){$("guessInputRow").classList.remove("hidden");$("fina
 function submitFinalGuess(){
   const guess=$("finalGuessInput").value.trim();if(!guess)return;
   if(state.isHost){finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord)}
-  else{sendPeer(state.peers.get(state.hostId),{type:"final-guess",guess});$("guessInputRow").classList.add("hidden");$("finalGuessInstruction").textContent="Guess submitted. Waiting for the result…"}
+  else{if(!sendPeer(state.peers.get(state.hostId),{type:"final-guess",guess})){setError("Connection lost","Your connection to the host is no longer available.");return}$("guessInputRow").classList.add("hidden");$("finalGuessInstruction").textContent="Guess submitted. Waiting for the result…"}
 }
 function finishRound(impostersWin,message,word){
   state.phase="finished";clearInterval(state.timerId);state.timerId=null;
@@ -364,31 +387,47 @@ function startHostMatch(){startOnlineMatch()}
 function continueFromRole(){continueToDiscussion()}
 function endDiscussion(){if(!state.isHost)return;clearInterval(state.timerId);state.timerId=null;syncPublic({type:"discussion-end"});openVoting()}
 function toggleReady(){
-  const p=state.players.get(state.clientId);if(!p||state.isHost)return;p.ready=!p.ready;sendPeer(state.peers.get(state.hostId),{type:"ready",ready:p.ready});renderLobby()
+  const p=state.players.get(state.clientId);if(!p||state.isHost)return;p.ready=!p.ready;if(!sendPeer(state.peers.get(state.hostId),{type:"ready",ready:p.ready})){p.ready=!p.ready;setError("Connection lost","Your connection to the host is no longer available.");return}renderLobby()
 }
 async function copyInvite(){try{await navigator.clipboard.writeText(currentInvite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{$("inviteLink").select?.()}}
+let initDone=false;
 function init(){
-  setMode(true);showHostOnly(false);updatePlayerSlider();
-  $("onlinePlayerCount").addEventListener("input",updatePlayerSlider);
-  $("hostModeBtn").addEventListener("click",()=>setMode(true));$("joinModeBtn").addEventListener("click",()=>setMode(false));
-  $("createRoomBtn").addEventListener("click",createRoom);$("joinRoomBtn").addEventListener("click",joinRoom);
-  $("copyRoomBtn").addEventListener("click",copyInvite);$("readyBtn").addEventListener("click",toggleReady);
-  $("startOnlineBtn").addEventListener("click",startHostMatch);$("continueRoleBtn").addEventListener("click",continueFromRole);
-  $("endDiscussionBtn").addEventListener("click",endDiscussion);$("submitVoteBtn").addEventListener("click",submitVote);$("hostRevealBtn").addEventListener("click",resolveVotes);
-  $("finalGuessBtn").addEventListener("click",submitFinalGuess);
-  $("playAgainBtn").addEventListener("click",()=>{
-    if(state.isHost){
-      state.gameStarted=false;state.phase="lobby";state.privateRole=null;state.privateWord="";state.privateHint="";
-      state.players.forEach(p=>{if(!p.isHost)p.ready=false});
-      const host=state.players.get(state.clientId);if(host)host.ready=true;
-      broadcastLobby();show("lobby");
-    }else{
-      backHome();
-    }
-  });
-  $("leaveBtn").addEventListener("click",leaveRoom);$("retryBtn").addEventListener("click",backHome);
-  const room=parseRoom(window.location.hash);if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
+  if(initDone)return;
+  initDone=true;
+  try{
+    setMode(true);showHostOnly(false);updatePlayerSlider();
+    const slider=$("onlinePlayerCount");
+    if(slider){slider.addEventListener("input",updatePlayerSlider);slider.addEventListener("change",updatePlayerSlider)}
+    $("hostModeBtn").addEventListener("click",()=>setMode(true));$("joinModeBtn").addEventListener("click",()=>setMode(false));
+    $("createRoomBtn").addEventListener("click",createRoom);$("joinRoomBtn").addEventListener("click",joinRoom);
+    $("copyRoomBtn").addEventListener("click",copyInvite);$("readyBtn").addEventListener("click",toggleReady);
+    $("startOnlineBtn").addEventListener("click",startHostMatch);$("continueRoleBtn").addEventListener("click",continueFromRole);
+    $("endDiscussionBtn").addEventListener("click",endDiscussion);$("submitVoteBtn").addEventListener("click",submitVote);$("hostRevealBtn").addEventListener("click",resolveVotes);
+    $("finalGuessBtn").addEventListener("click",submitFinalGuess);
+    $("playAgainBtn").addEventListener("click",()=>{
+      if(state.isHost){
+        state.gameStarted=false;state.phase="lobby";state.privateRole=null;state.privateWord="";state.privateHint="";
+        state.myVote=null;state.votes.clear();state.voteRound=0;state.selectedPlayer=null;
+        state.players.forEach(p=>{if(!p.isHost)p.ready=false});
+        const host=state.players.get(state.clientId);if(host)host.ready=true;
+        broadcastLobby();show("lobby");
+      }else{
+        backHome();
+      }
+    });
+    $("leaveBtn").addEventListener("click",leaveRoom);$("retryBtn").addEventListener("click",backHome);
+    const room=parseRoom(window.location.hash);
+    if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
+  }catch(e){
+    console.error("Online multiplayer startup failed:",e);
+    setError("Online page failed to start",e?.message||String(e));
+  }
 }
-document.addEventListener("DOMContentLoaded",init,{once:true});
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded",init,{once:true});
+}else{
+  init();
+}
+window.addEventListener("load",init,{once:true});
 
 })();
