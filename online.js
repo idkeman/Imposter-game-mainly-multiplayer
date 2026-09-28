@@ -195,7 +195,6 @@ function startOnlineMatch(){
   sendToAllPeers({type:"game-start",settings:state.settings,players:getPlayerEntries()});
   startTimer(state.settings.time);
   showLocalRole();
-  broadcastLobby();
 }
 function showLocalRole(){
   const imp=state.privateRole==="imposter";
@@ -288,9 +287,20 @@ function handlePeerMessage(peer,msg){
   if(msg.type==="lobby"&&!state.isHost){
     state.settings=msg.settings;state.players.clear();msg.players.forEach(p=>state.players.set(p.id,p));renderLobby();return;
   }
-  if(msg.type==="ready"&&state.isHost){const p=state.players.get(peer.id);if(p){p.ready=!!msg.ready;broadcastLobby()}return}
+  if(msg.type==="ready"&&state.isHost){
+    const p=state.players.get(peer.id);
+    if(p&&!state.gameStarted){p.ready=!!msg.ready;broadcastLobby()}
+    return;
+  }
+  if(msg.type==="vote"&&state.isHost){
+    if(state.phase!=="vote"||!state.players.has(peer.id)||state.myVote!==null){}
+    state.votes.set(peer.id,msg.candidate);
+    updateVoteStatus();
+    maybeRevealVotes();
+    return;
+  }
   if(msg.type==="game-start"){
-    state.gameStarted=true;state.settings=msg.settings;state.players.clear();msg.players.forEach(p=>state.players.set(p.id,p));return;
+    state.gameStarted=true;state.phase="role";state.settings=msg.settings;state.players.clear();msg.players.forEach(p=>state.players.set(p.id,p));show("role");return;
   }
   if(msg.type==="private-role"){
     state.privateRole=msg.role;state.privateWord=msg.word||"";state.privateHint=msg.hint||"General";showLocalRole();return;
@@ -302,7 +312,12 @@ function handlePeerMessage(peer,msg){
   if(msg.type==="final-guess-prompt"&&msg.selected===state.clientId){showGuessPrompt();return}
   if(msg.type==="round-finished"){renderFinished(msg.impostersWin,msg.message,msg.word);return}
   if(msg.type==="room-full"){setError("Room is full","The host already has the maximum number of players.");}
-  if(msg.type==="final-guess"&&state.isHost){const guess=String(msg.guess||"").trim();finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord);return}
+  if(msg.type==="final-guess"&&state.isHost){
+    const guess=String(msg.guess||"").trim();
+    if(peer.id!==state.selectedPlayer||state.phase!=="guess"||!guess)return;
+    finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord);
+    return;
+  }
 }
 function openVotingRemote(candidates,revote){renderVoting(candidates,revote);$("voteStatus").textContent="Choose a player, then submit your vote."}
 function sendTimerTick(){sendToAllPeers({type:"timer",seconds:state.timerLeft})}
