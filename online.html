@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0b0f">
+<title>Imposter — Online Multiplayer Test</title>
+<link rel="stylesheet" href="online.css">
+</head>
+<body>
+<main class="online-app">
+<header class="topbar">
+  <a class="back-btn" href="index.html">← LOCAL</a>
+  <div class="brand"><span class="brand-dot"></span>IMPOSTER ONLINE</div>
+  <button id="leaveBtn" class="icon-btn" type="button" aria-label="Leave online game">↻</button>
+</header>
+
+<section id="home" class="screen active">
+  <div class="hero">
+    <p class="eyebrow">ONLINE MULTIPLAYER TEST</p>
+    <h1>Play together.<br><span>On separate devices.</span></h1>
+    <p class="subtitle">Create a private room, share its invite link, and play the same Imposter round from separate phones or computers.</p>
+  </div>
+  <div class="card setup-card">
+    <label for="displayName">Your name</label>
+    <input id="displayName" maxlength="24" autocomplete="nickname" placeholder="Enter your name">
+    <div class="online-choice">
+      <button id="hostModeBtn" class="choice active" type="button">HOST A GAME</button>
+      <button id="joinModeBtn" class="choice" type="button">JOIN A GAME</button>
+    </div>
+
+    <div id="hostSetup" class="mode-panel">
+      <label>Players <span id="onlinePlayerCountLabel">5</span></label>
+      <input id="onlinePlayerCount" type="range" min="3" max="20" value="5">
+      <div class="range-labels"><span>3</span><span>20</span></div>
+
+      <label for="onlineCategory">Category</label>
+      <select id="onlineCategory">
+        <option value="mixed">Mixed</option><option value="food">Food</option><option value="animals">Animals</option>
+        <option value="places">Places</option><option value="objects">Objects</option><option value="activities">Activities</option>
+        <option value="nature">Nature</option><option value="school">School</option><option value="sports">Sports</option>
+        <option value="movies">Movies</option><option value="jobs">Jobs</option><option value="vehicles">Vehicles</option>
+        <option value="technology">Technology</option><option value="music">Music</option><option value="drinks">Drinks</option>
+        <option value="household">Household</option><option value="clothing">Clothing</option><option value="space">Space</option>
+        <option value="weather">Weather</option><option value="holidays">Holidays</option>
+      </select>
+
+      <label for="onlineRoundTime">Description time</label>
+      <select id="onlineRoundTime">
+        <option value="60">60 seconds</option><option value="90" selected>90 seconds</option>
+        <option value="120">2 minutes</option><option value="180">3 minutes</option>
+      </select>
+      <button id="createRoomBtn" class="primary" type="button">CREATE ONLINE GAME <span>→</span></button>
+    </div>
+
+    <div id="joinSetup" class="mode-panel hidden">
+      <label for="roomInput">Room ID / invite link</label>
+      <input id="roomInput" maxlength="120" autocomplete="off" placeholder="Paste the room ID or invite link">
+      <button id="joinRoomBtn" class="primary" type="button">JOIN ONLINE GAME <span>→</span></button>
+      <p class="microcopy">The room ID is the host's NetplayJS client ID. Share the generated invite link with friends.</p>
+    </div>
+  </div>
+</section>
+
+<section id="connecting" class="screen">
+  <div class="status-card card">
+    <div class="spinner"></div>
+    <p class="eyebrow" id="connectingKicker">CONNECTING</p>
+    <h2 id="connectingTitle">Connecting to NetplayJS…</h2>
+    <p class="instruction" id="connectingText">Opening the browser-to-browser multiplayer connection.</p>
+  </div>
+</section>
+
+<section id="lobby" class="screen">
+  <div class="phase">PRIVATE LOBBY</div>
+  <div class="lobby-head">
+    <div>
+      <p class="eyebrow">ROOM ID</p>
+      <h2 id="roomCode">—</h2>
+      <p class="microcopy">Players join through the invite link or by entering this room ID.</p>
+    </div>
+    <button id="copyRoomBtn" class="small-btn" type="button">COPY INVITE</button>
+  </div>
+  <div class="invite-box card">
+    <span id="inviteLink">—</span>
+  </div>
+  <div class="card lobby-card">
+    <div class="lobby-title"><strong>Players</strong><span id="lobbyCount">0 / 0</span></div>
+    <div id="onlinePlayerList" class="player-list"></div>
+  </div>
+  <div id="guestReadyArea" class="card ready-card hidden">
+    <p class="instruction">You are connected. Mark yourself ready when you're set.</p>
+    <button id="readyBtn" class="secondary" type="button">I'M READY</button>
+  </div>
+  <div id="hostLobbyArea">
+    <p id="hostLobbyMessage" class="microcopy"></p>
+    <button id="startOnlineBtn" class="primary" type="button" disabled>START MATCH <span>→</span></button>
+  </div>
+</section>
+
+<section id="role" class="screen">
+  <div class="phase">YOUR ROLE</div>
+  <div class="role-card">
+    <div class="role-icon" id="onlineRoleIcon">?</div>
+    <p id="onlineRoleKicker">YOU ARE</p>
+    <h2 id="onlineRoleTitle">—</h2>
+    <div class="word-box" id="onlineWordBox"><span>THE WORD IS</span><strong id="onlineSecretWord">—</strong></div>
+    <p id="onlineRoleHint" class="role-hint"></p>
+  </div>
+  <button id="continueRoleBtn" class="primary" type="button">CONTINUE TO DISCUSSION <span>→</span></button>
+</section>
+
+<section id="discussion" class="screen">
+  <div class="phase">DISCUSSION</div>
+  <div class="timer" id="onlineTimer">1:30</div>
+  <h2>Describe the word.</h2>
+  <p class="instruction">Give one clue, discuss who sounded suspicious, then everyone votes on their own device.</p>
+  <div class="rules card">
+    <div><b>1</b><span>Everyone gives one description.</span></div>
+    <div><b>2</b><span>Discuss who sounded suspicious.</span></div>
+    <div><b>3</b><span>Vote from your own device.</span></div>
+  </div>
+  <button id="endDiscussionBtn" class="secondary host-only" type="button">END DISCUSSION</button>
+  <p id="discussionStatus" class="microcopy"></p>
+</section>
+
+<section id="vote" class="screen">
+  <div class="phase" id="votePhase">VOTE</div>
+  <h2 id="voteTitle">Who is the imposter?</h2>
+  <p class="instruction">Choose one player. You cannot vote for yourself.</p>
+  <div id="onlineVoteGrid" class="vote-grid"></div>
+  <button id="submitVoteBtn" class="primary" type="button" disabled>SUBMIT VOTE <span>→</span></button>
+  <button id="hostRevealBtn" class="secondary host-only hidden" type="button">REVEAL VOTES</button>
+  <p id="voteStatus" class="microcopy"></p>
+</section>
+
+<section id="result" class="screen">
+  <div class="phase">REVEAL</div>
+  <div class="reveal-card">
+    <div class="reveal-icon">!</div>
+    <p>THE VOTE</p>
+    <h2 id="resultPlayer">—</h2>
+    <div id="onlineResultMessage"></div>
+    <div id="voteCounts" class="vote-counts"></div>
+  </div>
+  <div id="finalGuessArea" class="card guess-card hidden">
+    <p class="big-result">THE IMPOSTER WAS CAUGHT</p>
+    <p class="instruction" id="finalGuessInstruction">They get one final guess at the secret word.</p>
+    <div id="guessInputRow" class="guess-row hidden">
+      <input id="finalGuessInput" placeholder="Final guess…" autocomplete="off">
+      <button id="finalGuessBtn" class="primary" type="button">GUESS</button>
+    </div>
+  </div>
+  <div id="finishedArea" class="hidden">
+    <div id="onlineFinalResult" class="result-box"></div>
+    <button id="playAgainBtn" class="primary" type="button">RETURN TO LOBBY <span>→</span></button>
+  </div>
+</section>
+
+<section id="error" class="screen">
+  <div class="status-card card">
+    <div class="error-icon">!</div>
+    <p class="eyebrow">CONNECTION ERROR</p>
+    <h2 id="errorTitle">Something went wrong.</h2>
+    <p class="instruction" id="errorText"></p>
+    <button id="retryBtn" class="primary" type="button">RETURN TO ONLINE HOME <span>→</span></button>
+  </div>
+</section>
+</main>
+<script src="script.js?v=online-1" defer></script>
+<script src="online.js?v=online-1" defer></script>
+</body>
+</html>
