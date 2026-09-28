@@ -120,7 +120,7 @@ class NetplaySignal{
       if(["failed","closed"].includes(pc.connectionState)){
         closePeer(peer);state.peers.delete(peerId);
         if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}
-        else if(state.gameStarted)setError("Host connection lost","The host left or the peer connection failed. Return home to reconnect.");
+        else setError("Host connection lost","The host left or the peer connection failed. Return home and join a new room.");
       }
     };
     if(initiator){
@@ -294,6 +294,7 @@ function finishRound(impostersWin,message,word){
 function renderFinished(impostersWin,message,word){
   $("finalGuessArea").classList.add("hidden");$("finishedArea").classList.remove("hidden");
   $("onlineFinalResult").textContent=(impostersWin?"THE IMPOSTER WINS. ":"THE REAL PLAYERS WIN. ")+message+" The word was “"+word+"”.";
+  $("playAgainBtn").textContent=state.isHost?"RETURN TO LOBBY":"LEAVE GAME";
   show("result");
 }
 function handlePeerMessage(peer,msg){
@@ -374,7 +375,17 @@ function init(){
   $("copyRoomBtn").addEventListener("click",copyInvite);$("readyBtn").addEventListener("click",toggleReady);
   $("startOnlineBtn").addEventListener("click",startHostMatch);$("continueRoleBtn").addEventListener("click",continueFromRole);
   $("endDiscussionBtn").addEventListener("click",endDiscussion);$("submitVoteBtn").addEventListener("click",submitVote);$("hostRevealBtn").addEventListener("click",resolveVotes);
-  $("finalGuessBtn").addEventListener("click",submitFinalGuess);$("playAgainBtn").addEventListener("click",()=>{if(state.isHost){state.gameStarted=false;state.phase="lobby";state.players.forEach(p=>{if(!p.isHost)p.ready=false});state.players.get(state.clientId).ready=true;broadcastLobby();show("lobby")}});
+  $("finalGuessBtn").addEventListener("click",submitFinalGuess);
+  $("playAgainBtn").addEventListener("click",()=>{
+    if(state.isHost){
+      state.gameStarted=false;state.phase="lobby";state.privateRole=null;state.privateWord="";state.privateHint="";
+      state.players.forEach(p=>{if(!p.isHost)p.ready=false});
+      const host=state.players.get(state.clientId);if(host)host.ready=true;
+      broadcastLobby();show("lobby");
+    }else{
+      backHome();
+    }
+  });
   $("leaveBtn").addEventListener("click",leaveRoom);$("retryBtn").addEventListener("click",backHome);
   const room=parseRoom(window.location.hash);if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
 }
