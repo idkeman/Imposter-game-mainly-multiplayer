@@ -16,13 +16,25 @@ function getServerUrl(){
 function getWebSocketUrl(serverUrl){
   try{
     const url=new URL(serverUrl);
-    url.protocol=url.protocol==="http:"?"ws:":"wss:";
-    url.port="";
+    if(url.protocol==="http:")url.protocol="ws:";
+    else if(url.protocol==="https:")url.protocol="wss:";
     url.pathname="/";
     url.search="";
     url.hash="";
     return url.toString();
   }catch{return "wss://netplayjs.varunramesh.net/"}
+}
+const FALLBACK_ICE_SERVERS=[{urls:"stun:stun.l.google.com:19302"}];
+function getIceServers(){
+  const configured=Array.isArray(state.connection)?state.connection:[];
+  const merged=[...configured,...FALLBACK_ICE_SERVERS];
+  const seen=new Set();
+  return merged.filter(server=>{
+    const key=JSON.stringify(server);
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
 }
 const NETPLAY_SERVER_URL=getServerUrl();
 const NETPLAY_WS_URL=getWebSocketUrl(NETPLAY_SERVER_URL);
@@ -150,12 +162,13 @@ class NetplaySignal{
     setStatus("JOINING ROOM","CONNECTING TO HOST","Negotiating a secure WebRTC data channel…");show("connecting");
     const peer=await this.makePeer(hostId,true);
     if(!peer)throw new Error("Could not create the browser connection.");
+    if(peer.pc.connectionState==="failed")throw new Error("The browser rejected the WebRTC connection.");
     showJoinProgress("Offer sent. Waiting for the host to accept the connection…");
     await new Promise((resolve,reject)=>{
       const started=Date.now();
       const check=()=>{
         if(state.peers.get(hostId)?.dc?.readyState==="open"){resolve();return}
-        if(Date.now()-started>=15000){reject(new Error("The host did not accept the connection within 15 seconds."));return}
+        if(Date.now()-started>=30000){reject(new Error("The host did not accept the browser-to-browser connection within 30 seconds. The signaling server was reached, but WebRTC could not establish the peer connection."));return}
         setTimeout(check,250);
       };
       check();
@@ -163,11 +176,16 @@ class NetplaySignal{
   }
   async makePeer(peerId,initiator){
     if(state.peers.has(peerId))return state.peers.get(peerId);
-    const pc=new RTCPeerConnection({iceServers:state.connection||[]});
+    const pc=new RTCPeerConnection({iceServers:getIceServers(),iceCandidatePoolSize:10});
     const peer={id:peerId,pc,dc:null,initiator,pendingCandidates:[],timeoutId:null};
-    peer.timeoutId=setTimeout(()=>{if(pc.connectionState!=="connected"){try{pc.close()}catch{}state.peers.delete(peerId);if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}else setError("Could not connect to host","The WebRTC connection timed out. Make sure both devices are online and try again.");}},15000);
+    peer.timeoutId=setTimeout(()=>{if(pc.connectionState!=="connected"){try{pc.close()}catch{}state.peers.delete(peerId);if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}else setError("Could not connect to host","The browser-to-browser connection timed out. Both devices reached the signaling service, but WebRTC could not establish a direct connection. Try again from another network if this repeats.");}},30000);
     state.peers.set(peerId,peer);
     pc.onicecandidate=e=>{if(e.candidate)send({kind:"send-message",type:"candidate",destinationID:peerId,payload:e.candidate.toJSON?e.candidate.toJSON():e.candidate})};
+    pc.oniceconnectionstatechange=()=>{
+      if(pc.iceConnectionState==="failed"){
+        console.warn("WebRTC ICE failed for",peerId,pc.iceConnectionState);
+      }
+    };
     pc.onconnectionstatechange=()=>{
       if(pc.connectionState==="connected")clearTimeout(peer.timeoutId);
       if(["failed","closed"].includes(pc.connectionState)){
