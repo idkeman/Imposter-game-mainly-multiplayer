@@ -249,7 +249,7 @@ function revealCandidate(selected,counts){
   const payload={type:"vote-result",selected,counts,caught,revote:false};
   syncPublic(payload);renderVoteResult(selected,counts,caught);
   if(caught){
-    state.phase="guess";const peer=state.peers.get(selected);if(selected===state.clientId)showGuessPrompt();else sendPeer(peer,{type:"final-guess-prompt"});
+    state.phase="guess";if(selected===state.clientId)showGuessPrompt();
   }else finishRound(false,"The group voted for the wrong player.",state.privateWord);
 }
 function renderVoteResult(selected,counts,caught){
@@ -263,7 +263,7 @@ function showGuessPrompt(){$("guessInputRow").classList.remove("hidden");$("fina
 function submitFinalGuess(){
   const guess=$("finalGuessInput").value.trim();if(!guess)return;
   if(state.isHost){finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord)}
-  else{sendPeer(state.peers.get(state.hostId),{type:"final-guess",guess})$("guessInputRow").classList.add("hidden");$("finalGuessInstruction").textContent="Guess submitted. Waiting for the result…"}
+  else{sendPeer(state.peers.get(state.hostId),{type:"final-guess",guess});$("guessInputRow").classList.add("hidden");$("finalGuessInstruction").textContent="Guess submitted. Waiting for the result…"}
 }
 function finishRound(impostersWin,message,word){
   state.phase="finished";clearInterval(state.timerId);state.timerId=null;
@@ -293,7 +293,9 @@ function handlePeerMessage(peer,msg){
     return;
   }
   if(msg.type==="vote"&&state.isHost){
-    if(state.phase!=="vote"||!state.players.has(peer.id)||state.myVote!==null){}
+    if(state.phase!=="vote"||!state.players.has(peer.id))return;
+    const allowed=(state.candidates||getPlayerEntries().map(p=>p.id));
+    if(!allowed.includes(msg.candidate)||msg.candidate===peer.id)return;
     state.votes.set(peer.id,msg.candidate);
     updateVoteStatus();
     maybeRevealVotes();
@@ -309,7 +311,6 @@ function handlePeerMessage(peer,msg){
   if(msg.type==="discussion-end"){openVotingRemote(null,false);return}
   if(msg.type==="vote-open"){openVotingRemote(msg.candidates,msg.revote);return}
   if(msg.type==="vote-result"){renderVoteResult(msg.selected,msg.counts,msg.caught);if(msg.caught&&msg.selected===state.clientId)showGuessPrompt();return}
-  if(msg.type==="final-guess-prompt"&&msg.selected===state.clientId){showGuessPrompt();return}
   if(msg.type==="round-finished"){renderFinished(msg.impostersWin,msg.message,msg.word);return}
   if(msg.type==="room-full"){setError("Room is full","The host already has the maximum number of players.");}
   if(msg.type==="final-guess"&&state.isHost){
