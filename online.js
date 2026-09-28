@@ -111,11 +111,11 @@ class NetplaySignal{
   async makePeer(peerId,initiator){
     if(state.peers.has(peerId))return state.peers.get(peerId);
     const pc=new RTCPeerConnection({iceServers:state.connection||[]});
-    const peer={id:peerId,pc,dc:null,initiator};
+    const peer={id:peerId,pc,dc:null,initiator,pendingCandidates:[]};
     state.peers.set(peerId,peer);
     pc.onicecandidate=e=>{if(e.candidate)send({kind:"send-message",type:"candidate",destinationID:peerId,payload:e.candidate.toJSON?e.candidate.toJSON():e.candidate})};
     pc.onconnectionstatechange=()=>{
-      if(["failed","disconnected","closed"].includes(pc.connectionState)){
+      if(["failed","closed"].includes(pc.connectionState)){
         closePeer(peer);state.peers.delete(peerId);
         if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}
         else if(state.gameStarted)setError("Host connection lost","The host left or the peer connection failed. Return home to reconnect.");
@@ -157,13 +157,32 @@ class NetplaySignal{
   }
   async handleSignal(peer,type,payload){
     try{
+      if(type==="candidate"){
+        if(peer.pc.remoteDescription){
+          await peer.pc.addIceCandidate(payload);
+        }else{
+          peer.pendingCandidates.push(payload);
+        }
+        return;
+      }
       if(type==="offer"){
         await peer.pc.setRemoteDescription(payload);
-        const answer=await peer.pc.createAnswer();await peer.pc.setLocalDescription(answer);
+        for(const candidate of peer.pendingCandidates.splice(0)){
+          await peer.pc.addIceCandidate(candidate);
+        }
+        const answer=await peer.pc.createAnswer();
+        await peer.pc.setLocalDescription(answer);
         send({kind:"send-message",type:"answer",destinationID:peer.id,payload:answer});
-      }else if(type==="answer"){await peer.pc.setRemoteDescription(payload)}
-      else if(type==="candidate"){await peer.pc.addIceCandidate(payload)}
-    }catch(e){console.error("Signaling error",e)}
+      }else if(type==="answer"){
+        await peer.pc.setRemoteDescription(payload);
+        for(const candidate of peer.pendingCandidates.splice(0)){
+          await peer.pc.addIceCandidate(candidate);
+        }
+      }
+    }catch(e){
+      console.error("Signaling error",e);
+      setError("WebRTC signaling failed","The browser-to-browser connection could not complete. Check that both players are using HTTPS and try again.");
+    }
   }
 }
 state.net=null;
