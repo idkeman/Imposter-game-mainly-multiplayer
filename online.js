@@ -22,7 +22,7 @@ async function publicList(){
    row.className="public-room";info.className="public-room-info";strong.textContent=r.host_name||"Public Game";
    meta.textContent=(r.player_count||0)+" / "+(r.max_players||20)+" players · "+String(r.category||"mixed").toUpperCase();
    info.append(strong,meta);btn.className="small-btn";btn.type="button";btn.textContent="JOIN";
-   btn.onclick=()=>{$("roomInput").value=r.room_code;mode(false);$("joinRoomBtn").click()};
+   btn.onclick=()=>{const n=name($("displayName").value);if(!n){alert("Enter your name first.");return}mode(false);joinPeer(r.host_id,r.room_code)};
    row.append(info,btn);e.append(row);
   });
  }catch(err){
@@ -164,7 +164,8 @@ function again(){stop();S.game=false;S.phase="lobby";S.role="";S.word="";S.hint=
 function ready(){if(S.hostMode)return;const p=S.players.get(S.id);if(!p)return;const v=!p.ready;if(send(S.hostConn,{type:"ready",ready:v})){p.ready=v;lobby()}else error("Connection lost","Your ready status could not reach the host.")}
 async function copy(){try{await navigator.clipboard.writeText(invite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{txt("inviteLink",invite())}}
 function create(){const n=name($("displayName").value);if(!n){alert("Enter your name first.");return}S.name=n;S.hostMode=true;S.publicRoom=$("publicRoomToggle").checked;S.settings={players:+$("onlinePlayerCount").value,category:$("onlineCategory").value,time:+$("onlineRoundTime").value};status("CONNECTING","CREATING ROOM","Connecting to the multiplayer service…");show("connecting");connectHost()}
-function join(){const n=name($("displayName").value),h=peerIdFrom($("roomInput").value);if(!n){alert("Enter your name first.");return}if(!h){alert("Enter a valid 8-character room code or invite link.");return}S.name=n;S.hostMode=false;S.publicRoom=false;S.host=h;S.phase="connecting";status("CONNECTING","JOINING ROOM","Connecting to the host…");show("connecting");connectGuest(h)}
+function joinPeer(hostId,displayCode){const n=name($("displayName").value);const h=peerIdFrom(hostId)||peerIdFrom(displayCode);if(!n){alert("Enter your name first.");return}if(!h){alert("That public room is no longer reachable. Refresh the public-room list and try again.");return}S.name=n;S.hostMode=false;S.publicRoom=false;S.host=h;S.phase="connecting";status("CONNECTING","JOINING ROOM","Connecting to the host…");show("connecting");connectGuest(h)}
+function join(){joinPeer(null,$("roomInput").value)}
 function init(){if(window.__impOnline)return;window.__impOnline=true;if(!window.Peer){error("Online multiplayer unavailable","The multiplayer library did not load. Refresh the page and try again.");return}mode(true);hostOnly(false);slider();directoryInit();publicList();$("onlinePlayerCount").oninput=slider;$("hostModeBtn").onclick=()=>mode(true);$("joinModeBtn").onclick=()=>mode(false);$("createRoomBtn").onclick=create;$("joinRoomBtn").onclick=join;$("refreshPublicBtn").onclick=()=>{publicList()};$("copyRoomBtn").onclick=copy;$("readyBtn").onclick=ready;$("startOnlineBtn").onclick=start;$("continueRoleBtn").onclick=continueRole;$("endDiscussionBtn").onclick=()=>openVote();$("submitVoteBtn").onclick=submitVote;$("hostRevealBtn").onclick=resolve;$("finalGuessBtn").onclick=guess;$("playAgainBtn").onclick=again;$("leaveBtn").onclick=home;$("retryBtn").onclick=home;const h=peerIdFrom(location.href);if(h){$("roomInput").value=location.href;mode(false)}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
