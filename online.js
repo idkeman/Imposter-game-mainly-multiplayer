@@ -68,7 +68,7 @@ function encodeRoomCode(uuid){
     const bytes=Uint8Array.from(hex.match(/../g).map(x=>parseInt(x,16)));
     let binary="";
     bytes.forEach(b=>binary+=String.fromCharCode(b));
-    return btoa(binary).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");
+    return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
   }catch{return ""}
 }
 function decodeRoomCode(code){
@@ -110,10 +110,10 @@ function resetLocal(){
   state.myVote=null;state.votes.clear();state.voteRound=0;state.candidates=null;state.selectedPlayer=null;state.gameStarted=false;state.phase="home";
 }
 function backHome(){resetLocal();showHostOnly(false);$("leaveBtn").textContent="↻";show("home")}
-function currentInvite(){const room=state.hostId||state.clientId;return window.location.href.split("#")[0]+"#room="+encodeURIComponent(room)}
+function currentInvite(){const room=state.hostId||state.clientId;return window.location.href.split("#")[0]+"#room="+encodeURIComponent(displayRoomCode(room))}
 function renderLobby(){
   $("roomCode").textContent=displayRoomCode(state.hostId||state.clientId);
-  $("inviteLink").textContent=state.isHost?currentInvite():(state.hostId?window.location.href.split("#")[0]+"#room="+encodeURIComponent(state.hostId):"—");
+  $("inviteLink").textContent=state.isHost?currentInvite():(state.hostId?window.location.href.split("#")[0]+"#room="+encodeURIComponent(displayRoomCode(state.hostId)):"—");
   const list=getPlayerEntries();
   $("lobbyCount").textContent=list.length+" / "+state.settings.players;
   $("onlinePlayerList").replaceChildren();
