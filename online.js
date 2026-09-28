@@ -66,7 +66,24 @@ function hostMsg(c,m){
  if(m.type==="guess"&&S.phase==="guess"&&id===S.selected){finish(m.guess.trim().toLowerCase()===S.word.toLowerCase(),"Final guess: "+m.guess,S.word)}
 }
 function connectGuest(host){
- undefined
+ S.peer=new Peer(PEER_OPTIONS);
+ S.peer.on("open",id=>{
+  S.id=id;status("CONNECTED","FOUND ROOM","Opening the game connection…");
+  const c=S.peer.connect(host,{reliable:true,serialization:"json",metadata:{name:S.name}});S.hostConn=c;
+  let opened=false;
+  const fail=()=>{if(!opened&&S.phase==="connecting"){try{c.close()}catch{};error("Could not join room","The host could not be reached. Check that the host still has the room open, then try again.")}};
+  const timeout=setTimeout(fail,CONNECT_TIMEOUT);
+  c.on("open",()=>{opened=true;clearTimeout(timeout);status("CONNECTED","JOINED ROOM","Waiting for the host…");send(c,{type:"hello",name:S.name})});
+  c.on("data",guestMsg);
+  c.on("error",e=>{console.warn("[Imposter] data connection error",e);fail()});
+  c.on("close",()=>{clearTimeout(timeout);if(S.phase!=="home")error("Host disconnected","The host left the room or the connection was lost.")});
+ });
+ S.peer.on("error",e=>{
+  console.warn("[Imposter] guest PeerJS error",e.type,e);
+  if(e.type==="peer-unavailable")error("Room not found","That room is not currently reachable. Ask the host to create a new room and send the new code.");
+  else error("Could not connect",e.message||"The multiplayer service could not be reached.");
+ });
+ S.peer.on("disconnected",()=>console.warn("[Imposter] guest signaling disconnected"));
 }
 function guestMsg(m){
  if(m.type==="accepted"){S.settings={...S.settings,...m.settings};S.host=m.host;return}
