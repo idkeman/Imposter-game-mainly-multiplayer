@@ -1,3 +1,4 @@
+(function(){
 /* 
   NetplayJS-compatible online transport.
   NetplayJS 0.4.1 documents a WebSocket matchmaking server followed by
@@ -377,3 +378,5 @@ function init(){
   const room=parseRoom(window.location.hash);if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
 }
 document.addEventListener("DOMContentLoaded",init,{once:true});
+
+})();
