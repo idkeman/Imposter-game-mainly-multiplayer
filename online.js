@@ -96,7 +96,7 @@ function imposters(n){return n<=6?1:n<=11?2:n<=16?3:4}
 function start(){
  if(!S.hostMode)return;const ps=players();if(ps.length!==S.settings.players||!ps.every(p=>p.ready)){lobby();return}
  S.word=word();S.roles={};const ids=ps.map(p=>p.id).sort(()=>Math.random()-.5),set=new Set(ids.slice(0,Math.min(imposters(ps.length),ps.length-1)));ps.forEach(p=>S.roles[p.id]=set.has(p.id)?"imposter":"real");S.game=true;S.phase="role";S.role=S.roles[S.id];S.hint=hint(S.word);S.votes.clear();S.voteRound=0;S.selected=null;
- all({type:"game-start",settings:S.settings,players:ps});ps.forEach(p=>{if(p.id!==S.id)send(S.guest.get(p.id),{type:"role",role:S.roles[p.id],word:S.roles[p.id]==="real"?S.word:"",hint:hint(S.word)})});roleUI()
+ all({type:"game-start",settings:S.settings,players:ps});ps.forEach(p=>{if(p.id!==S.id)sendTo(p.id,{type:"role",role:S.roles[p.id],word:S.roles[p.id]==="real"?S.word:"",hint:hint(S.word)})});roleUI()
 }
 function beginTimer(){stop();S.timer=+S.settings.time||90;timerUI();all({type:"timer",seconds:S.timer});S.timerId=setInterval(()=>{S.timer--;timerUI();all({type:"timer",seconds:S.timer});if(S.timer<=0){stop();openVote()}},1000)}
 async function openRoomChannel(hostId){
