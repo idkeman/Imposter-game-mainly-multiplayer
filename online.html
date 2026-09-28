@@ -50,6 +50,7 @@
         <option value="60">60 seconds</option><option value="90" selected>90 seconds</option>
         <option value="120">2 minutes</option><option value="180">3 minutes</option>
       </select>
+      <label class="public-toggle"><input id="publicRoomToggle" type="checkbox"><span>LIST THIS ROOM PUBLICLY</span></label>
       <button id="createRoomBtn" class="primary" type="button">CREATE ONLINE GAME <span>→</span></button>
     </div>
 
@@ -58,6 +59,10 @@
       <input id="roomInput" maxlength="120" autocomplete="off" placeholder="Paste the room ID or invite link">
       <button id="joinRoomBtn" class="primary" type="button">JOIN ONLINE GAME <span>→</span></button>
       <p class="microcopy">Use the short room code or the full invite link. Share it with everyone who should join.</p>
+      <div class="public-section">
+        <div class="public-title"><strong>PUBLIC ROOMS</strong><button id="refreshPublicBtn" class="small-btn" type="button">REFRESH</button></div>
+        <div id="publicRoomList" class="public-room-list"><p class="microcopy">Looking for public rooms…</p></div>
+      </div>
     </div>
   </div>
 </section>
@@ -72,12 +77,12 @@
 </section>
 
 <section id="lobby" class="screen">
-  <div class="phase">PRIVATE LOBBY</div>
+  <div class="phase" id="lobbyPhase">PRIVATE LOBBY</div>
   <div class="lobby-head">
     <div>
       <p class="eyebrow">ROOM ID</p>
       <h2 id="roomCode">—</h2>
-      <p class="microcopy">Players join through the invite link or by entering this room ID.</p>
+      <p class="microcopy" id="lobbyRoomHelp">Players join through the invite link or by entering this room ID.</p>
     </div>
     <button id="copyRoomBtn" class="small-btn" type="button">COPY INVITE</button>
   </div>
