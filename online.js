@@ -102,7 +102,7 @@ function beginTimer(){stop();S.timer=+S.settings.time||90;timerUI();all({type:"t
 async function openRoomChannel(hostId){
  if(!supabaseClient)throw new Error("The room service did not load.");
  const topic="imposter-room:"+String(hostId).toLowerCase();
- const ch=supabaseClient.channel(topic,{config:{private:false,broadcast:{self:false,ack:true}}});
+ const ch=supabaseClient.channel(topic,{config:{private:true,broadcast:{self:false,ack:true}}});
  ch.on("broadcast",{event:"game"},({payload})=>{if(!payload||payload.to&&payload.to!==S.id)return;if(S.hostMode)hostMsg({peer:payload.from},payload);else guestMsg(payload)});
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Room server connection timed out.")),CONNECT_TIMEOUT);ch.subscribe((status,err)=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve()}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){clearTimeout(timer);console.warn("[Imposter] Realtime subscribe failed",status,err);reject(new Error(err?.message||("Realtime channel status: "+status)))}})});
  S.roomChannel=ch;return ch;
