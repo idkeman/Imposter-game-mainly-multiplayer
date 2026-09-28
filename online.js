@@ -1,533 +1,95 @@
-(function(){
-/* 
-  NetplayJS-compatible online transport.
-  NetplayJS 0.4.1 documents a WebSocket matchmaking server followed by
-  WebRTC peer connections. This test branch uses that documented signaling
-  protocol directly so this DOM-based game can support 3–20 players and
-  send private role messages to individual peers.
-*/
-const DEFAULT_NETPLAY_SERVER_URL="https://netplayjs.varunramesh.net";
-function getServerUrl(){
-  try{
-    const match=window.location.hash.match(/(?:^|[&#])server=([^&]+)/);
-    return match?decodeURIComponent(match[1]):DEFAULT_NETPLAY_SERVER_URL;
-  }catch{return DEFAULT_NETPLAY_SERVER_URL}
+(()=>{"use strict";
+const $=id=>document.getElementById(id),screens=["home","connecting","lobby","role","discussion","vote","result","error"];
+const S={peer:null,hostConn:null,guest:new Map(),id:"",host:"",hostMode:false,name:"",settings:{players:5,category:"mixed",time:90},players:new Map(),roles:{},word:"",role:"",hint:"",phase:"home",timer:0,timerId:null,voteCandidates:null,votes:new Map(),selectedVote:null,voteRound:0,selected:null,game:false};
+const PREFIX="imposter-",MAX=20,MIN=3;
+function show(x){screens.forEach(s=>$(s)?.classList.toggle("active",s===x));scrollTo(0,0)}
+function status(k,t,x){$("connectingKicker").textContent=k;$("connectingTitle").textContent=t;$("connectingText").textContent=x}
+function error(t,x){$("errorTitle").textContent=t;$("errorText").textContent=x;show("error")}
+function name(x){return String(x||"").trim().replace(/\s+/g," ").slice(0,24)}
+function code(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let r="";const a=new Uint8Array(8);crypto.getRandomValues(a);a.forEach(v=>r+=c[v%c.length]);return r}
+function peerIdFrom(v){let r=String(v||"").trim();try{const u=new URL(r),m=u.hash.match(/room=([^&]+)/i);if(m)r=decodeURIComponent(m[1])}catch{}const m=r.match(/room=([^&#]+)/i);if(m)r=decodeURIComponent(m[1]);r=r.replace(/^room=/i,"").trim();if(/^imposter-[a-z0-9]{8}$/i.test(r))return r.toLowerCase();if(/^[a-z0-9]{8}$/i.test(r))return PREFIX+r.toLowerCase();return""}
+function room(id){id=String(id||"");return id.startsWith(PREFIX)?id.slice(PREFIX.length).toUpperCase():id.toUpperCase()}
+function invite(){return location.href.split("#")[0]+"#room="+room(S.host||S.id)}
+function players(){return [...S.players.values()].filter(p=>p.connected!==false)}
+function pname(id){return S.players.get(id)?.name||"Player"}
+function txt(id,v){const e=$(id);if(e)e.textContent=v}
+function mode(host){$("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);$("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host)}
+function hostOnly(v){document.querySelectorAll(".host-only").forEach(e=>e.classList.toggle("hidden",!v))}
+function slider(){txt("onlinePlayerCountLabel",$("onlinePlayerCount").value)}
+function send(c,m){if(!c?.open)return false;try{c.send(m);return true}catch{return false}}
+function all(m){S.guest.forEach(c=>send(c,m))}
+function stop(){clearInterval(S.timerId);S.timerId=null}
+function closeAll(){stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null}
+function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
+function lobby(){
+ txt("roomCode",room(S.host||S.id));txt("inviteLink",S.host?invite():"—");const ps=players();txt("lobbyCount",ps.length+" / "+S.settings.players);$("onlinePlayerList").replaceChildren();
+ ps.forEach(p=>{const r=document.createElement("div"),n=document.createElement("strong"),m=document.createElement("div"),d=document.createElement("span"),l=document.createElement("span");r.className="player-row";m.className="player-meta";d.className="dot "+(p.ready?"ready":"");n.textContent=p.name;l.textContent=p.id===S.id?"YOU":p.isHost?"HOST":p.ready?"READY ✓":"NOT READY";if(p.isHost)l.classList.add("host-badge");m.append(d,l);r.append(n,m);$("onlinePlayerList").append(r)});
+ $("guestReadyArea").classList.toggle("hidden",S.hostMode);$("hostLobbyArea").classList.toggle("hidden",!S.hostMode);
+ if(S.hostMode){const full=ps.length===S.settings.players,ready=full&&ps.every(p=>p.ready);$("hostLobbyMessage").textContent=full?(ready?"Everyone is ready. Start the match.":"Everyone must be ready before the match can start."):"Waiting for "+(S.settings.players-ps.length)+" more player"+(S.settings.players-ps.length===1?"":"s")+"…";$("startOnlineBtn").disabled=!ready}else $("readyBtn").textContent=S.players.get(S.id)?.ready?"READY ✓":"I'M READY";
 }
-function getWebSocketUrl(serverUrl){
-  try{
-    const url=new URL(serverUrl);
-    if(url.protocol==="http:")url.protocol="ws:";
-    else if(url.protocol==="https:")url.protocol="wss:";
-    url.pathname="/";
-    url.search="";
-    url.hash="";
-    return url.toString();
-  }catch{return "wss://netplayjs.varunramesh.net/"}
+function sync(){if(!S.hostMode)return;all({type:"lobby",settings:S.settings,players:players()});lobby()}
+function roleUI(){const imp=S.role==="imposter";txt("onlineRoleIcon",imp?"?":"✓");txt("onlineRoleTitle",imp?"THE IMPOSTER":"A REAL PLAYER");txt("onlineSecretWord",imp?"—":S.word||"—");txt("onlineRoleHint",imp?"Your one-word hint: "+S.hint:"Keep the secret word hidden from the imposter.");$("onlineWordBox").classList.toggle("hidden",imp);show("role")}
+function timerUI(){let n=Math.max(0,S.timer|0);txt("onlineTimer",Math.floor(n/60)+":"+String(n%60).padStart(2,"0"))}
+function discussion(){show("discussion");timerUI();txt("discussionStatus",S.hostMode?"End discussion when everyone is ready to vote.":"Discuss, then wait for the host to open voting.")}
+function word(){const a=window.IMPOSTER_WORDS?.[S.settings.category]||window.IMPOSTER_WORDS?.mixed||[];return a[Math.floor(Math.random()*a.length)]||"Pizza"}
+function hint(w){return String(window.IMPOSTER_HINT_FOR?.(w)||"General").split(/\s+/)[0]}
+function imposters(n){return n<=6?1:n<=11?2:n<=16?3:4}
+function start(){
+ if(!S.hostMode)return;const ps=players();if(ps.length!==S.settings.players||!ps.every(p=>p.ready)){lobby();return}
+ S.word=word();S.roles={};const ids=ps.map(p=>p.id).sort(()=>Math.random()-.5),set=new Set(ids.slice(0,Math.min(imposters(ps.length),ps.length-1)));ps.forEach(p=>S.roles[p.id]=set.has(p.id)?"imposter":"real");S.game=true;S.phase="role";S.role=S.roles[S.id];S.hint=hint(S.word);S.votes.clear();S.voteRound=0;S.selected=null;
+ all({type:"game-start",settings:S.settings,players:ps});ps.forEach(p=>{if(p.id!==S.id)send(S.guest.get(p.id),{type:"role",role:S.roles[p.id],word:S.roles[p.id]==="real"?S.word:"",hint:hint(S.word)})});roleUI()
 }
-const FALLBACK_ICE_SERVERS=[{urls:"stun:stun.l.google.com:19302"}];
-function getIceServers(){
-  const configured=Array.isArray(state.connection)?state.connection:[];
-  const merged=[...configured,...FALLBACK_ICE_SERVERS];
-  const seen=new Set();
-  return merged.filter(server=>{
-    const key=JSON.stringify(server);
-    if(seen.has(key))return false;
-    seen.add(key);
-    return true;
-  });
+function beginTimer(){stop();S.timer=+S.settings.time||90;timerUI();all({type:"timer",seconds:S.timer});S.timerId=setInterval(()=>{S.timer--;timerUI();all({type:"timer",seconds:S.timer});if(S.timer<=0){stop();openVote()}},1000)}
+function connectHost(){
+ const id=PREFIX+code().toLowerCase();S.peer=new Peer(id,{debug:0});
+ S.peer.on("open",x=>{S.id=S.host=x;S.hostMode=true;S.players.set(x,{id:x,name:S.name,isHost:true,ready:true,connected:true});hostOnly(true);lobby();show("lobby")});
+ S.peer.on("connection",c=>{c.on("open",()=>{S.guest.set(c.peer,c);send(c,{type:"hello"})});c.on("data",m=>hostMsg(c,m));c.on("close",()=>{S.guest.delete(c.peer);S.players.delete(c.peer);if(!S.game)sync()})});
+ S.peer.on("error",e=>{if(e.type==="unavailable-id"){try{S.peer.destroy()}catch{};setTimeout(connectHost,200)}else if(!S.id)error("Could not create room",e.message||"The multiplayer service could not be reached.")});
+ S.peer.on("disconnected",()=>{if(S.game)error("Connection lost","The multiplayer connection was lost. Create a new room.")})
 }
-const NETPLAY_SERVER_URL=getServerUrl();
-const NETPLAY_WS_URL=getWebSocketUrl(NETPLAY_SERVER_URL);
-const state={
-  connection:null,ws:null,clientId:"",hostId:"",isHost:false,name:"",
-  players:new Map(),peers:new Map(),privateRole:null,privateWord:"",privateHint:"",
-  settings:{players:5,category:"mixed",time:90},phase:"home",timerLeft:0,timerId:null,
-  myVote:null,votes:new Map(),voteRound:0,candidates:null,selectedPlayer:null,
-  gameStarted:false,lastIntent:""
-};
-const $=id=>document.getElementById(id);
-const screens=["home","connecting","lobby","role","discussion","vote","result","error"];
-function show(id){screens.forEach(s=>$(s)?.classList.toggle("active",s===id));window.scrollTo(0,0)}
-function setStatus(kicker,title,text){$("connectingKicker").textContent=kicker;$("connectingTitle").textContent=title;$("connectingText").textContent=text}
-function setError(title,text){$("errorTitle").textContent=title;$("errorText").textContent=text;show("error")}
-function normalizeName(value){return String(value||"").trim().replace(/\s+/g," ").slice(0,24)}
-function parseRoom(value){
-  const raw=String(value||"").trim();
-  if(!raw)return "";
-  try{const url=new URL(raw);const room=url.hash.match(/(?:^|[&#])room=([^&]+)/);if(room)return decodeURIComponent(room[1])}catch{}
-  const match=raw.match(/(?:^|[?#&])room=([^&#]+)/);if(match)return decodeURIComponent(match[1]);
-  const direct=raw.replace(/^room=/i,"").trim();
-  if(validRoom(direct))return direct;
-  return decodeRoomCode(direct);
+function hostMsg(c,m){
+ const id=c.peer;
+ if(m.type==="hello"){if(S.game){send(c,{type:"busy"});c.close();return}if(players().length>=S.settings.players){send(c,{type:"full"});c.close();return}S.players.set(id,{id,name:name(m.name)||"Player",isHost:false,ready:false,connected:true});send(c,{type:"accepted",settings:S.settings,host:S.host});sync();return}
+ const p=S.players.get(id);if(!p)return;
+ if(m.type==="ready"){if(!S.game){p.ready=!!m.ready;sync()}return}
+ if(m.type==="vote"&&S.phase==="vote"){const ok=(S.voteCandidates||players().map(x=>x.id)).includes(m.candidate)&&m.candidate!==id;if(ok){S.votes.set(id,m.candidate);voteStatus();if(S.votes.size>=players().length)resolve()};return}
+ if(m.type==="guess"&&S.phase==="guess"&&id===S.selected){finish(m.guess.trim().toLowerCase()===S.word.toLowerCase(),"Final guess: "+m.guess,S.word)}
 }
-function validRoom(id){return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)}
-function encodeRoomCode(uuid){
-  try{
-    const hex=uuid.replace(/-/g,"").toLowerCase();
-    if(!/^[0-9a-f]{32}$/.test(hex))return "";
-    const bytes=Uint8Array.from(hex.match(/../g).map(x=>parseInt(x,16)));
-    let binary="";
-    bytes.forEach(b=>binary+=String.fromCharCode(b));
-    return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-  }catch{return ""}
+function connectGuest(host){
+ S.peer=new Peer(undefined,{debug:0});S.peer.on("open",id=>{S.id=id;const c=S.peer.connect(host,{reliable:true,serialization:"json"});S.hostConn=c;c.on("open",()=>send(c,{type:"hello",name:S.name}));c.on("data",guestMsg);c.on("close",()=>error("Host disconnected","The host left the room or the connection was lost."));setTimeout(()=>{if(!c.open&&S.phase==="connecting")error("Could not join room","The host could not be reached. Make sure the room is open and the code is correct.")},20000)});S.peer.on("error",e=>error("Could not join room",e.message||"The room could not be reached."))
 }
-function decodeRoomCode(code){
-  try{
-    const clean=String(code||"").trim().replace(/-/g,"+").replace(/_/g,"/");
-    if(!/^[A-Za-z0-9+/]{20,22}$/.test(clean))return "";
-    const padded=clean+"=".repeat((4-clean.length%4)%4);
-    const binary=atob(padded);
-    if(binary.length!==16)return "";
-    const hex=[...binary].map(ch=>ch.charCodeAt(0).toString(16).padStart(2,"0")).join("");
-    const uuid=hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
-    return validRoom(uuid)?uuid:"";
-  }catch{return ""}
+function guestMsg(m){
+ if(m.type==="accepted"){S.settings={...S.settings,...m.settings};S.host=m.host;return}
+ if(m.type==="lobby"){S.settings={...S.settings,...m.settings};S.players.clear();m.players.forEach(p=>S.players.set(p.id,p));lobby();show("lobby");return}
+ if(m.type==="game-start"){S.game=true;S.settings={...S.settings,...m.settings};S.players.clear();m.players.forEach(p=>S.players.set(p.id,p));show("role");return}
+ if(m.type==="role"){S.role=m.role;S.word=m.word||"";S.hint=m.hint||"General";roleUI();return}
+ if(m.type==="timer"){S.timer=+m.seconds||0;timerUI();return}
+ if(m.type==="vote-open"){renderVote(m.candidates,m.revote);return}
+ if(m.type==="vote-result"){result(m.selected,m.counts,m.caught);return}
+ if(m.type==="finish"){finished(m.win,m.message,m.word);return}
+ if(m.type==="full")error("Room is full","The host already has the maximum number of players.");
+ if(m.type==="busy")error("Match already started","This room is already in a game.");
 }
-function displayRoomCode(uuid){return encodeRoomCode(uuid)||uuid}
-
-function setMode(host){
-  $("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);
-  $("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host);
+function continueRole(){S.phase="discussion";discussion();if(S.hostMode)beginTimer()}
+function renderVote(cands,revote){
+ S.phase="vote";S.voteCandidates=cands||players().map(p=>p.id);S.selectedVote=null;txt("votePhase",revote?"REVOTE":"VOTE");txt("voteTitle",revote?"It's a tie. Vote again.":"Who is the imposter?");$("onlineVoteGrid").replaceChildren();$("submitVoteBtn").disabled=true;$("hostRevealBtn").classList.toggle("hidden",!S.hostMode);
+ S.voteCandidates.filter(id=>id!==S.id).forEach(id=>{const b=document.createElement("button");b.type="button";b.className="vote-option";b.textContent=pname(id);b.onclick=()=>{document.querySelectorAll(".vote-option").forEach(x=>x.classList.remove("selected"));b.classList.add("selected");S.selectedVote=id;$("submitVoteBtn").disabled=false};$("onlineVoteGrid").append(b)});txt("voteStatus","Choose a player, then submit your vote.");show("vote")
 }
-function updatePlayerSlider(){const input=$("onlinePlayerCount"),label=$("onlinePlayerCountLabel");if(!input||!label)return;label.textContent=input.value}
-function showHostOnly(show){document.querySelectorAll(".host-only").forEach(e=>e.classList.toggle("hidden",!show))}
-function roleHint(){return typeof window.IMPOSTER_HINT_FOR==="function"?window.IMPOSTER_HINT_FOR(state.privateWord):({food:"Food",animals:"Animal",places:"Place",objects:"Object",activities:"Activity",nature:"Nature",school:"School",sports:"Sport",movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.settings.category]||"General")}
-function getPlayerEntries(){return [...state.players.values()].filter(p=>p.connected!==false)}
-function playerName(id){return state.players.get(id)?.name||"Player"}
-function send(wsMessage){
-  if(state.ws?.readyState===WebSocket.OPEN){state.ws.send(JSON.stringify(wsMessage));return true}
-  return false
-}
-function closePeer(peer){try{peer.dc?.close()}catch{}try{peer.pc?.close()}catch{}}
-function cleanupNetwork(){
-  clearInterval(state.timerId);state.timerId=null;
-  clearInterval(state._timerBroadcast);state._timerBroadcast=null;
-  for(const peer of state.peers.values())closePeer(peer);
-  state.peers.clear();try{state.ws?.close()}catch{}state.ws=null;
-}
-function resetLocal(){
-  cleanupNetwork();state.connection=null;state.clientId="";state.hostId="";state.isHost=false;state.players.clear();
-  state.myVote=null;state.votes.clear();state.voteRound=0;state.candidates=null;state.selectedPlayer=null;state.gameStarted=false;state.phase="home";
-}
-function backHome(){resetLocal();showHostOnly(false);$("leaveBtn").textContent="↻";show("home")}
-function currentInvite(){const room=state.hostId||state.clientId;return window.location.href.split("#")[0]+"#room="+encodeURIComponent(displayRoomCode(room))}
-function renderLobby(){
-  $("roomCode").textContent=displayRoomCode(state.hostId||state.clientId);
-  $("inviteLink").textContent=state.isHost?currentInvite():(state.hostId?window.location.href.split("#")[0]+"#room="+encodeURIComponent(displayRoomCode(state.hostId)):"—");
-  const list=getPlayerEntries();
-  $("lobbyCount").textContent=list.length+" / "+state.settings.players;
-  $("onlinePlayerList").replaceChildren();
-  list.forEach(p=>{
-    const row=document.createElement("div");row.className="player-row";
-    const strong=document.createElement("strong");strong.textContent=p.name;
-    const meta=document.createElement("div");meta.className="player-meta";
-    const dot=document.createElement("span");dot.className="dot "+(p.ready?"ready":"");
-    const label=document.createElement("span");label.textContent=p.id===state.clientId?"YOU":(p.isHost?"HOST":"READY "+(p.ready?"✓":""));
-    if(p.isHost)label.classList.add("host-badge");
-    meta.append(dot,label);row.append(strong,meta);$("onlinePlayerList").appendChild(row);
-  });
-  $("guestReadyArea").classList.toggle("hidden",state.isHost);
-  $("hostLobbyArea").classList.toggle("hidden",!state.isHost);
-  if(!state.isHost){
-    $("readyBtn").textContent=state.players.get(state.clientId)?.ready?"READY ✓":"I'M READY";
-  }else{
-    const full=list.length===state.settings.players;
-    const ready=full&&list.every(p=>p.ready);
-    $("hostLobbyMessage").textContent=full?(ready?"Everyone is ready. Start the match.":"Waiting for everyone to ready up."):"Waiting for "+(state.settings.players-list.length)+" more player"+(state.settings.players-list.length===1?"":"s")+"…";
-    $("startOnlineBtn").disabled=!ready;
-  }
-}
-function addOrUpdatePlayer(player){state.players.set(player.id,{connected:true,ready:false,...player})}
-
-class NetplaySignal{
-  constructor(){this.ws=null}
-  connect(){
-    return new Promise((resolve,reject)=>{
-      try{this.ws=new WebSocket(NETPLAY_WS_URL)}catch(e){reject(e);return}
-      state.ws=this.ws;
-      let settled=false;
-      this.ws.onopen=()=>{setStatus("NETPLAYJS","CONNECTED TO SIGNALING","Waiting for your player ID…")};
-      const registrationTimeout=setTimeout(()=>{
-        if(!settled){
-          settled=true;
-          try{this.ws.close()}catch{}
-          reject(new Error("NetplayJS signaling did not respond within 12 seconds."));
-        }
-      },12000);
-      this.ws.onerror=()=>{
-        if(!settled){
-          settled=true;clearTimeout(registrationTimeout);
-          reject(new Error("Could not connect to the NetplayJS matchmaking server."));
-        }else setError("Signaling connection lost","The multiplayer signaling service is unavailable. Return home and try again.")
-      };
-      this.ws.onclose=()=>{
-        if(!settled){
-          settled=true;clearTimeout(registrationTimeout);
-          reject(new Error("The NetplayJS signaling connection closed before registration."));
-        }else if(state.gameStarted&&state.peers.size===0){
-          setError("Connection lost","The multiplayer signaling connection was closed.");
-        }
-      };
-      this.ws.onmessage=event=>{
-        let msg;try{msg=JSON.parse(event.data)}catch{return}
-        if(msg.kind==="registration-success"){
-          state.clientId=msg.clientID;state.connection=msg.iceServers||[];
-          settled=true;resolve(msg);
-        }else this.handleServerMessage(msg);
-      };
-    });
-  }
-  host(){
-    state.isHost=true;state.hostId=state.clientId;showHostOnly(true);
-    addOrUpdatePlayer({id:state.clientId,name:state.name,isHost:true,ready:true,connected:true});
-    renderLobby();show("lobby");
-  }
-  async join(hostId){
-    state.isHost=false;state.hostId=hostId;showHostOnly(false);
-    if(!validRoom(hostId))throw new Error("That room ID is not a valid NetplayJS client ID.");
-    setStatus("JOINING ROOM","CONNECTING TO HOST","Negotiating a secure WebRTC data channel…");show("connecting");
-    const peer=await this.makePeer(hostId,true);
-    if(!peer)throw new Error("Could not create the browser connection.");
-    if(peer.pc.connectionState==="failed")throw new Error("The browser rejected the WebRTC connection.");
-    showJoinProgress("Offer sent. Waiting for the host to accept the connection…");
-    await new Promise((resolve,reject)=>{
-      const started=Date.now();
-      const check=()=>{
-        if(state.peers.get(hostId)?.dc?.readyState==="open"){resolve();return}
-        if(Date.now()-started>=30000){reject(new Error("The host did not accept the browser-to-browser connection within 30 seconds. The signaling server was reached, but WebRTC could not establish the peer connection."));return}
-        setTimeout(check,250);
-      };
-      check();
-    });
-  }
-  async makePeer(peerId,initiator){
-    if(state.peers.has(peerId))return state.peers.get(peerId);
-    const pc=new RTCPeerConnection({iceServers:getIceServers(),iceCandidatePoolSize:10});
-    const peer={id:peerId,pc,dc:null,initiator,pendingCandidates:[],timeoutId:null};
-    peer.timeoutId=setTimeout(()=>{if(pc.connectionState!=="connected"){try{pc.close()}catch{}state.peers.delete(peerId);if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}else setError("Could not connect to host","The browser-to-browser connection timed out. Both devices reached the signaling service, but WebRTC could not establish a direct connection. Try again from another network if this repeats.");}},30000);
-    state.peers.set(peerId,peer);
-    pc.onicecandidate=e=>{if(e.candidate)send({kind:"send-message",type:"candidate",destinationID:peerId,payload:e.candidate.toJSON?e.candidate.toJSON():e.candidate})};
-    pc.oniceconnectionstatechange=()=>{
-      if(pc.iceConnectionState==="failed"){
-        console.warn("WebRTC ICE failed for",peerId,pc.iceConnectionState);
-      }
-    };
-    pc.onconnectionstatechange=()=>{
-      if(pc.connectionState==="connected")clearTimeout(peer.timeoutId);
-      if(["failed","closed"].includes(pc.connectionState)){
-        closePeer(peer);state.peers.delete(peerId);
-        clearTimeout(peer.timeoutId);
-        if(state.isHost){const p=state.players.get(peerId);if(p){p.connected=false;broadcastLobby()}}
-        else setError("Host connection lost","The host left or the peer connection failed. Return home and join a new room.");
-      }
-    };
-    if(initiator){
-      peer.dc=pc.createDataChannel("data",{ordered:true});
-      this.bindDataChannel(peer);
-      const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-      send({kind:"send-message",type:"offer",destinationID:peerId,payload:offer});
-    }else{
-      pc.ondatachannel=e=>{peer.dc=e.channel;this.bindDataChannel(peer)};
-    }
-    return peer;
-  }
-  bindDataChannel(peer){
-    peer.dc.binaryType="arraybuffer";
-    peer.dc.onopenerror=null;
-    peer.dc.onopen=()=>{
-      clearTimeout(peer.timeoutId);
-      if(!state.isHost){
-        showJoinProgress("Secure connection established. Waiting for the host lobby…");
-        sendPeer(peer,{type:"hello",name:state.name,clientId:state.clientId});
-      }else{
-        this.acceptPeer(peer);
-      }
-    };
-    peer.dc.onmessage=e=>{
-      let msg;try{msg=JSON.parse(typeof e.data==="string"?e.data:new TextDecoder().decode(e.data))}catch{return}
-      this.handlePeerMessage(peer,msg);
-    };
-    peer.dc.onclose=()=>{clearTimeout(peer.timeoutId);closePeer(peer);state.peers.delete(peer.id);if(state.isHost){const p=state.players.get(peer.id);if(p){p.connected=false;broadcastLobby()}}};
-  }
-  acceptPeer(peer){
-    sendPeer(peer,{type:"host-accepted",settings:state.settings});
-  }
-  handleServerMessage(msg){
-    if(msg.kind==="server-error")setError("NetplayJS server error",msg.reason);
-    else if(msg.kind==="send-message-failure"){
-      const destination=msg.destinationID===state.hostId?"the host":"the requested player";
-      setError("Could not reach "+destination,msg.reason||"The signaling server could not deliver the connection message.");
-    }
-    else if(msg.kind==="peer-message"){
-      let peer=state.peers.get(msg.sourceID);
-      if(!peer){this.makePeer(msg.sourceID,false).catch(e=>setError("Peer setup failed",e.message))}
-      peer=state.peers.get(msg.sourceID);if(peer)this.handleSignal(peer,msg.type,msg.payload);
-    }
-  }
-  async handleSignal(peer,type,payload){
-    try{
-      if(type==="candidate"){
-        if(peer.pc.remoteDescription){
-          await peer.pc.addIceCandidate(payload);
-        }else{
-          peer.pendingCandidates.push(payload);
-        }
-        return;
-      }
-      if(type==="offer"){
-        await peer.pc.setRemoteDescription(payload);
-        for(const candidate of peer.pendingCandidates.splice(0)){
-          await peer.pc.addIceCandidate(candidate);
-        }
-        const answer=await peer.pc.createAnswer();
-        await peer.pc.setLocalDescription(answer);
-        send({kind:"send-message",type:"answer",destinationID:peer.id,payload:answer});
-      }else if(type==="answer"){
-        await peer.pc.setRemoteDescription(payload);
-        for(const candidate of peer.pendingCandidates.splice(0)){
-          await peer.pc.addIceCandidate(candidate);
-        }
-      }
-    }catch(e){
-      console.error("Signaling error",e);
-      setError("WebRTC signaling failed","The browser-to-browser connection could not complete. Check that both players are using HTTPS and try again.");
-    }
-  }
-}
-state.net=null;
-function sendPeer(peer,msg){
-  if(peer?.dc?.readyState==="open"){peer.dc.send(JSON.stringify(msg));return true}
-  return false;
-}
-function showJoinProgress(text){if(!state.isHost&&state.phase==="home")setStatus("JOINING ROOM","CONNECTING TO HOST",text)}
-function sendToAllPeers(msg){for(const peer of state.peers.values())sendPeer(peer,msg)}
-function broadcastLobby(){const payload={type:"lobby",settings:state.settings,players:getPlayerEntries().map(p=>({id:p.id,name:p.name,isHost:p.isHost,ready:p.ready}))};sendToAllPeers(payload);renderLobby()}
-function syncPublic(msg){sendToAllPeers(msg)}
-function assignRound(){
-  const pool=(window.IMPOSTER_WORDS&&Array.isArray(window.IMPOSTER_WORDS[state.settings.category])?window.IMPOSTER_WORDS[state.settings.category]:window.IMPOSTER_WORDS?.mixed)||["Pizza","Shark","Volcano"];
-  const word=pool[Math.floor(Math.random()*pool.length)];
-  const players=getPlayerEntries();const max=Math.max(1,Math.floor(players.length/3));const n=1+Math.floor(Math.random()*max);
-  const shuffled=players.map(p=>p.id).sort(()=>Math.random()-.5);const imposters=new Set(shuffled.slice(0,n));
-  state.privateWord=word;state.privateRole=imposters.has(state.clientId)?"imposter":"player";state.privateHint=typeof window.IMPOSTER_HINT_FOR==="function"?window.IMPOSTER_HINT_FOR(word):roleHint();
-  for(const p of players){
-    const peer=state.peers.get(p.id);
-    if(p.id===state.clientId)continue;
-    if(peer)sendPeer(peer,{type:"private-role",role:imposters.has(p.id)?"imposter":"player",word:imposters.has(p.id)?"":word,hint:imposters.has(p.id)?hintForWord(word):"",name:p.name});
-  }
-  state._roles=Object.fromEntries(players.map(p=>[p.id,imposters.has(p.id)]));
-}
-function hintForWord(word){return typeof window.IMPOSTER_HINT_FOR==="function"?window.IMPOSTER_HINT_FOR(word):({food:"Food",animals:"Animal",places:"Place",objects:"Object",activities:"Activity",nature:"Nature",school:"School",sports:"Sport",movies:"Movies",jobs:"Work",vehicles:"Vehicle",technology:"Technology",music:"Music",drinks:"Drink",household:"Home",clothing:"Clothing",space:"Space",weather:"Weather",holidays:"Holiday",mixed:"General"}[state.settings.category]||"General")}
-function startOnlineMatch(){
-  if(!state.isHost)return;
-  if(getPlayerEntries().length!==state.settings.players||!getPlayerEntries().every(p=>p.ready))return;
-  state.gameStarted=true;state.phase="role";state.myVote=null;state.votes.clear();state.voteRound=0;
-  assignRound();
-  sendToAllPeers({type:"game-start",settings:state.settings,players:getPlayerEntries()});
-  startTimer(state.settings.time);
-  showLocalRole();
-}
-function showLocalRole(){
-  const imp=state.privateRole==="imposter";
-  $("onlineRoleIcon").textContent=imp?"?":"✓";
-  $("onlineRoleKicker").textContent=imp?"YOU ARE":"THE SECRET WORD IS";
-  $("onlineRoleTitle").textContent=imp?"IMPOSTER":"YOU ARE A REAL PLAYER";
-  $("onlineWordBox").classList.toggle("hidden",imp);
-  $("onlineSecretWord").textContent=state.privateWord;
-  $("onlineRoleHint").textContent=imp?"Hint: "+state.privateHint+" — Figure out the exact word.":"Describe the word without saying it directly.";
-  show("role");
-}
-function startTimer(seconds){
-  clearInterval(state.timerId);state.timerLeft=Math.max(0,Math.floor(seconds));renderTimer();
-  state.timerId=setInterval(()=>{state.timerLeft--;renderTimer();if(state.timerLeft<=0){clearInterval(state.timerId);state.timerId=null;if(state.isHost)openVoting()}},1000);
-}
-function renderTimer(){const s=Math.max(0,Math.floor(state.timerLeft));$("onlineTimer").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
-function continueToDiscussion(){
-  if(state.isHost&&state.phase==="role"){
-    state.phase="discussion";
-    startTimer(state.settings.time);
-    sendTimerTick();
-  }else{
-    state.phase="discussion";
-  }
-  show("discussion");
-  $("discussionStatus").textContent=state.isHost?"You're the host. End discussion when everyone has described the word.":"The host controls the discussion timer.";
-}
-function openVoting(candidates=null,revote=false){
-  if(!state.isHost)return;
-  clearInterval(state.timerId);state.timerId=null;state.phase="vote";state.candidates=candidates;state.votes.clear();state.myVote=null;
-  syncPublic({type:"vote-open",candidates:candidates,revote,players:getPlayerEntries().map(p=>({id:p.id,name:p.name}))});
-  renderVoting(candidates,revote);
-}
-function renderVoting(candidates,revote){
-  state.phase="vote";$("votePhase").textContent=revote?"REVOTE":"VOTE";$("voteTitle").textContent=revote?"The vote is tied. Vote again.":"Who is the imposter?";
-  const list=candidates||getPlayerEntries().map(p=>p.id);const grid=$("onlineVoteGrid");grid.replaceChildren();
-  list.forEach(id=>{
-    const b=document.createElement("button");b.type="button";b.className="vote-btn";b.dataset.id=id;b.textContent=playerName(id);
-    if(id===state.clientId)b.classList.add("self"),b.disabled=true;
-    b.addEventListener("click",()=>{grid.querySelectorAll(".vote-btn").forEach(x=>x.classList.remove("selected"));b.classList.add("selected");state.myVote=id;$("submitVoteBtn").disabled=false});
-    grid.appendChild(b);
-  });
-  $("submitVoteBtn").disabled=state.myVote===null;
-  $("hostRevealBtn").classList.toggle("hidden",!state.isHost);$("hostRevealBtn").disabled=!state.isHost||state.votes.size<getPlayerEntries().length;show("vote");
-}
-function submitVote(){
-  if(state.myVote===null)return;
-  if(state.isHost){state.votes.set(state.clientId,state.myVote);updateVoteStatus();maybeRevealVotes()}
-  else {const peer=state.peers.get(state.hostId);sendPeer(peer,{type:"vote",candidate:state.myVote});$("submitVoteBtn").disabled=true;$("voteStatus").textContent="Vote submitted. Waiting for the reveal…"}
-}
-function updateVoteStatus(){const total=getPlayerEntries().length;const count=state.votes.size;$("voteStatus").textContent=count+" / "+total+" votes submitted."}
-function maybeRevealVotes(){if(state.isHost&&state.votes.size>=getPlayerEntries().length)resolveVotes()}
-function resolveVotes(){
-  if(!state.isHost)return;
-  const counts={};for(const candidate of state.votes.values())counts[candidate]=(counts[candidate]||0)+1;
-  const max=Math.max(...Object.values(counts),0);const tied=Object.keys(counts).filter(id=>counts[id]===max);
-  if(tied.length>1){state.voteRound++;if(state.voteRound>=3){const chosen=tied[0];revealCandidate(chosen,counts);return}openVoting(tied,true);return}
-  revealCandidate(tied[0],counts);
-}
-function revealCandidate(selected,counts){
-  if(!selected)return;state.selectedPlayer=selected;state.phase="result";const caught=!!state._roles?.[selected];
-  const payload={type:"vote-result",selected,counts,caught,revote:false};
-  syncPublic(payload);renderVoteResult(selected,counts,caught);
-  if(caught){
-    state.phase="guess";if(selected===state.clientId)showGuessPrompt();
-  }else finishRound(false,"The group voted for the wrong player.",state.privateWord);
-}
-function renderVoteResult(selected,counts,caught){
-  $("resultPlayer").textContent=playerName(selected).toUpperCase();$("onlineResultMessage").innerHTML=caught?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";
-  $("voteCounts").replaceChildren();Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([id,n])=>{const row=document.createElement("div");row.className="vote-count";row.innerHTML="<span></span><strong>"+n+"</strong>";row.firstChild.textContent=playerName(id);$("voteCounts").appendChild(row)});
-  $("finalGuessArea").classList.toggle("hidden",!caught);$("finishedArea").classList.toggle("hidden",caught);
-  if(caught)$("finalGuessInstruction").textContent=selected===state.clientId?"You were caught. Guess the secret word for a chance to win.":playerName(selected)+" gets one final guess at the secret word.";
-  show("result");
-}
-function showGuessPrompt(){$("guessInputRow").classList.remove("hidden");$("finalGuessInput").focus()}
-function submitFinalGuess(){
-  const guess=$("finalGuessInput").value.trim();if(!guess)return;
-  if(state.isHost){finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord)}
-  else{if(!sendPeer(state.peers.get(state.hostId),{type:"final-guess",guess})){setError("Connection lost","Your connection to the host is no longer available.");return}$("guessInputRow").classList.add("hidden");$("finalGuessInstruction").textContent="Guess submitted. Waiting for the result…"}
-}
-function finishRound(impostersWin,message,word){
-  state.phase="finished";clearInterval(state.timerId);state.timerId=null;
-  syncPublic({type:"round-finished",impostersWin,message,word});
-  renderFinished(impostersWin,message,word);
-}
-function renderFinished(impostersWin,message,word){
-  $("finalGuessArea").classList.add("hidden");$("finishedArea").classList.remove("hidden");
-  $("onlineFinalResult").textContent=(impostersWin?"THE IMPOSTER WINS. ":"THE REAL PLAYERS WIN. ")+message+" The word was “"+word+"”.";
-  $("playAgainBtn").textContent=state.isHost?"RETURN TO LOBBY":"LEAVE GAME";
-  show("result");
-}
-function handlePeerMessage(peer,msg){
-  if(msg.type==="hello"&&state.isHost){
-    if(getPlayerEntries().length>=state.settings.players){sendPeer(peer,{type:"room-full"});closePeer(peer);state.peers.delete(peer.id);return}
-    addOrUpdatePlayer({id:peer.id,name:normalizeName(msg.name)||"Player",isHost:false,ready:false});
-    broadcastLobby();return;
-  }
-  if(msg.type==="host-accepted"&&!state.isHost){
-    state.settings={...state.settings,...msg.settings};state.players.set(state.clientId,{id:state.clientId,name:state.name,isHost:false,ready:false,connected:true});renderLobby();show("lobby");return;
-  }
-  if(msg.type==="lobby"&&!state.isHost){
-    state.settings=msg.settings;state.players.clear();msg.players.forEach(p=>state.players.set(p.id,p));renderLobby();return;
-  }
-  if(msg.type==="ready"&&state.isHost){
-    const p=state.players.get(peer.id);
-    if(p&&!state.gameStarted){p.ready=!!msg.ready;broadcastLobby()}
-    return;
-  }
-  if(msg.type==="vote"&&state.isHost){
-    if(state.phase!=="vote"||!state.players.has(peer.id))return;
-    const allowed=(state.candidates||getPlayerEntries().map(p=>p.id));
-    if(!allowed.includes(msg.candidate)||msg.candidate===peer.id)return;
-    state.votes.set(peer.id,msg.candidate);
-    updateVoteStatus();
-    maybeRevealVotes();
-    return;
-  }
-  if(msg.type==="game-start"){
-    state.gameStarted=true;state.phase="role";state.settings=msg.settings;state.players.clear();msg.players.forEach(p=>state.players.set(p.id,p));show("role");return;
-  }
-  if(msg.type==="private-role"){
-    state.privateRole=msg.role;state.privateWord=msg.word||"";state.privateHint=msg.hint||"General";showLocalRole();return;
-  }
-  if(msg.type==="timer"){state.timerLeft=msg.seconds;renderTimer();return}
-  if(msg.type==="discussion-end"){openVotingRemote(null,false);return}
-  if(msg.type==="vote-open"){openVotingRemote(msg.candidates,msg.revote);return}
-  if(msg.type==="vote-result"){renderVoteResult(msg.selected,msg.counts,msg.caught);if(msg.caught&&msg.selected===state.clientId)showGuessPrompt();return}
-  if(msg.type==="round-finished"){renderFinished(msg.impostersWin,msg.message,msg.word);return}
-  if(msg.type==="room-full"){setError("Room is full","The host already has the maximum number of players.");}
-  if(msg.type==="final-guess"&&state.isHost){
-    const guess=String(msg.guess||"").trim();
-    if(peer.id!==state.selectedPlayer||state.phase!=="guess"||!guess)return;
-    finishRound(guess.toLowerCase()===state.privateWord.toLowerCase(),"Final guess: "+guess,state.privateWord);
-    return;
-  }
-}
-function openVotingRemote(candidates,revote){renderVoting(candidates,revote);$("voteStatus").textContent="Choose a player, then submit your vote."}
-function sendTimerTick(){sendToAllPeers({type:"timer",seconds:state.timerLeft})}
-function hostTimerBroadcast(){
-  clearInterval(state._timerBroadcast);state._timerBroadcast=setInterval(()=>{if(state.isHost){sendTimerTick();if(state.timerLeft<=0)clearInterval(state._timerBroadcast)}},1000)
-}
-function leaveRoom(){backHome()}
-function createRoom(){
-  const name=normalizeName($("displayName").value);if(!name){alert("Enter your name first.");$("displayName").focus();return}
-  state.name=name;state.isHost=true;state.settings={players:Number($("onlinePlayerCount").value),category:$("onlineCategory").value,time:Number($("onlineRoundTime").value)};
-  setStatus("HOSTING","CREATING PRIVATE ROOM","Registering with the NetplayJS matchmaking service…");show("connecting");
-  state.net=new NetplaySignal();state.net.connect().then(()=>{state.net.host();hostTimerBroadcast()}).catch(e=>setError("Could not create room",e.message));
-}
-function joinRoom(){
-  const name=normalizeName($("displayName").value),room=parseRoom($("roomInput").value);if(!name){alert("Enter your name first.");$("displayName").focus();return}
-  if(!validRoom(room)){alert("That room code is invalid or incomplete. Copy the host invite or enter the full 22-character room code.");return}
-  state.name=name;setStatus("JOINING","CONNECTING TO ROOM","Registering with the NetplayJS matchmaking service…");show("connecting");
-  state.net=new NetplaySignal();state.net.connect().then(()=>state.net.join(room)).catch(e=>setError("Could not join room",e.message));
-}
-function startHostMatch(){startOnlineMatch()}
-function continueFromRole(){continueToDiscussion()}
-function endDiscussion(){if(!state.isHost)return;clearInterval(state.timerId);state.timerId=null;syncPublic({type:"discussion-end"});openVoting()}
-function toggleReady(){
-  const p=state.players.get(state.clientId);if(!p||state.isHost)return;p.ready=!p.ready;if(!sendPeer(state.peers.get(state.hostId),{type:"ready",ready:p.ready})){p.ready=!p.ready;setError("Connection lost","Your connection to the host is no longer available.");return}renderLobby()
-}
-async function copyInvite(){try{await navigator.clipboard.writeText(currentInvite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{$("inviteLink").select?.()}}
-let initDone=false;
-function init(){
-  if(initDone)return;
-  initDone=true;
-  try{
-    setMode(true);showHostOnly(false);updatePlayerSlider();
-    const slider=$("onlinePlayerCount");
-    if(slider){slider.addEventListener("input",updatePlayerSlider);slider.addEventListener("change",updatePlayerSlider)}
-    $("hostModeBtn").addEventListener("click",()=>setMode(true));$("joinModeBtn").addEventListener("click",()=>setMode(false));
-    $("createRoomBtn").addEventListener("click",createRoom);$("joinRoomBtn").addEventListener("click",joinRoom);
-    $("copyRoomBtn").addEventListener("click",copyInvite);$("readyBtn").addEventListener("click",toggleReady);
-    $("startOnlineBtn").addEventListener("click",startHostMatch);$("continueRoleBtn").addEventListener("click",continueFromRole);
-    $("endDiscussionBtn").addEventListener("click",endDiscussion);$("submitVoteBtn").addEventListener("click",submitVote);$("hostRevealBtn").addEventListener("click",resolveVotes);
-    $("finalGuessBtn").addEventListener("click",submitFinalGuess);
-    $("playAgainBtn").addEventListener("click",()=>{
-      if(state.isHost){
-        state.gameStarted=false;state.phase="lobby";state.privateRole=null;state.privateWord="";state.privateHint="";
-        state._roles={};state.timerLeft=0;state.myVote=null;state.votes.clear();state.voteRound=0;state.selectedPlayer=null;
-        state.players.forEach(p=>{if(!p.isHost)p.ready=false});
-        const host=state.players.get(state.clientId);if(host)host.ready=true;
-        broadcastLobby();show("lobby");
-      }else{
-        backHome();
-      }
-    });
-    $("leaveBtn").addEventListener("click",leaveRoom);$("retryBtn").addEventListener("click",backHome);
-    const room=parseRoom(window.location.hash);
-    if(validRoom(room)){$("roomInput").value=window.location.href;setMode(false)}
-    else{
-      const hashCode=String(window.location.hash||"").replace(/^#room=/,"");
-      if(decodeRoomCode(hashCode)){$("roomInput").value=decodeRoomCode(hashCode);setMode(false)}
-    }
-  }catch(e){
-    console.error("Online multiplayer startup failed:",e);
-    setError("Online page failed to start",e?.message||String(e));
-  }
-}
-if(document.readyState==="loading"){
-  document.addEventListener("DOMContentLoaded",init,{once:true});
-}else{
-  init();
-}
-window.addEventListener("load",init,{once:true});
-
+function openVote(cands=null,revote=false){if(!S.hostMode)return;stop();S.votes.clear();S.voteCandidates=cands||players().map(p=>p.id);all({type:"vote-open",candidates:S.voteCandidates,revote});renderVote(S.voteCandidates,revote)}
+function submitVote(){if(!S.selectedVote)return;if(S.hostMode){S.votes.set(S.id,S.selectedVote);$("submitVoteBtn").disabled=true;voteStatus();if(S.votes.size>=players().length)resolve()}else if(send(S.hostConn,{type:"vote",candidate:S.selectedVote})){$("submitVoteBtn").disabled=true;txt("voteStatus","Vote submitted. Waiting for the reveal…")}else error("Connection lost","Your vote could not reach the host.")}
+function voteStatus(){txt("voteStatus",S.votes.size+" / "+players().length+" votes submitted.")}
+function resolve(){if(!S.hostMode||S.phase!=="vote")return;const counts={};S.votes.forEach(v=>counts[v]=(counts[v]||0)+1);const max=Math.max(...Object.values(counts));const tied=Object.keys(counts).filter(x=>counts[x]===max);if(tied.length>1&&S.voteRound<2){S.voteRound++;openVote(tied,true);return}reveal(tied[0],counts)}
+function reveal(id,counts){const caught=S.roles[id]==="imposter";S.selected=id;S.phase=caught?"guess":"finished";all({type:"vote-result",selected:id,counts,caught});result(id,counts,caught);if(!caught)finish(false,"The group voted for the wrong player.",S.word);else if(id===S.id)showGuess()}
+function result(id,counts,caught){txt("resultPlayer",pname(id).toUpperCase());$("onlineResultMessage").innerHTML=caught?"<strong>They were an IMPOSTER.</strong>":"<strong>They were NOT an imposter.</strong>";$("voteCounts").replaceChildren();Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([id,n])=>{const r=document.createElement("div"),s=document.createElement("span"),b=document.createElement("strong");r.className="vote-count";s.textContent=pname(id);b.textContent=n;r.append(s,b);$("voteCounts").append(r)});$("finalGuessArea").classList.toggle("hidden",!caught);$("finishedArea").classList.toggle("hidden",caught);if(caught){txt("finalGuessInstruction",S.selected===S.id?"You were caught. Guess the secret word for a chance to win.":pname(S.selected)+" gets one final guess at the secret word.");$("guessInputRow").classList.toggle("hidden",S.selected!==S.id)}show("result")}
+function showGuess(){$("guessInputRow").classList.remove("hidden");$("finalGuessInput").focus()}
+function guess(){const g=$("finalGuessInput").value.trim();if(!g)return;if(S.hostMode)finish(g.toLowerCase()===S.word.toLowerCase(),"Final guess: "+g,S.word);else if(send(S.hostConn,{type:"guess",guess:g})){$("guessInputRow").classList.add("hidden");txt("finalGuessInstruction","Guess submitted. Waiting for the result…")}else error("Connection lost","Your guess could not reach the host.")}
+function finish(win,msg,w){if(!S.hostMode)return;stop();S.phase="finished";all({type:"finish",win,message:msg,word:w});finished(win,msg,w)}
+function finished(win,msg,w){S.phase="finished";$("finalGuessArea").classList.add("hidden");$("finishedArea").classList.remove("hidden");$("onlineFinalResult").textContent=(win?"THE IMPOSTER WINS. ":"THE REAL PLAYERS WIN. ")+msg+" The word was “"+w+"”.";show("result")}
+function again(){stop();S.game=false;S.phase="lobby";S.role="";S.word="";S.hint="";S.roles={};S.votes.clear();S.voteRound=0;S.selected=null;if(S.hostMode){S.players.forEach(p=>p.ready=p.isHost);sync()}show("lobby")}
+function ready(){if(S.hostMode)return;const p=S.players.get(S.id);if(!p)return;const v=!p.ready;if(send(S.hostConn,{type:"ready",ready:v})){p.ready=v;lobby()}else error("Connection lost","Your ready status could not reach the host.")}
+async function copy(){try{await navigator.clipboard.writeText(invite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{txt("inviteLink",invite())}}
+function create(){const n=name($("displayName").value);if(!n){alert("Enter your name first.");return}S.name=n;S.hostMode=true;S.settings={players:+$("onlinePlayerCount").value,category:$("onlineCategory").value,time:+$("onlineRoundTime").value};status("CONNECTING","CREATING PRIVATE ROOM","Connecting to the multiplayer service…");show("connecting");connectHost()}
+function join(){const n=name($("displayName").value),h=peerIdFrom($("roomInput").value);if(!n){alert("Enter your name first.");return}if(!h){alert("Enter a valid 8-character room code or invite link.");return}S.name=n;S.hostMode=false;S.host=h;S.phase="connecting";status("CONNECTING","JOINING ROOM","Connecting to the host…");show("connecting");connectGuest(h)}
+function init(){if(window.__impOnline)return;window.__impOnline=true;if(!window.Peer){error("Online multiplayer unavailable","The multiplayer library did not load. Refresh the page and try again.");return}mode(true);hostOnly(false);slider();$("onlinePlayerCount").oninput=slider;$("hostModeBtn").onclick=()=>mode(true);$("joinModeBtn").onclick=()=>mode(false);$("createRoomBtn").onclick=create;$("joinRoomBtn").onclick=join;$("copyRoomBtn").onclick=copy;$("readyBtn").onclick=ready;$("startOnlineBtn").onclick=start;$("continueRoleBtn").onclick=continueRole;$("endDiscussionBtn").onclick=()=>openVote();$("submitVoteBtn").onclick=submitVote;$("hostRevealBtn").onclick=resolve;$("finalGuessBtn").onclick=guess;$("playAgainBtn").onclick=again;$("leaveBtn").onclick=home;$("retryBtn").onclick=home;const h=peerIdFrom(location.href);if(h){$("roomInput").value=location.href;mode(false)}}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
