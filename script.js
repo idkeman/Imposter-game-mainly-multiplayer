@@ -266,12 +266,7 @@ function bindGame() {
   const start=el("startBtn");
   if(!slider||!start) throw new Error("Game controls are missing from the page.");
 
-  const syncSlider = () => {
-    const value = Number(slider.value);
-    if (!Number.isFinite(value)) return;
-    state.players = Math.max(3, Math.min(20, Math.round(value)));
-    el("playerCountLabel").textContent = String(state.players);
-  };
+  const syncSlider = () => updatePlayerCount();
   slider.addEventListener("input", syncSlider, {passive:true});
   slider.addEventListener("change", syncSlider, {passive:true});
   slider.addEventListener("pointermove", syncSlider, {passive:true});
