@@ -42,6 +42,7 @@ function send(wsMessage){if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(
 function closePeer(peer){try{peer.dc?.close()}catch{}try{peer.pc?.close()}catch{}}
 function cleanupNetwork(){
   clearInterval(state.timerId);state.timerId=null;
+  clearInterval(state._timerBroadcast);state._timerBroadcast=null;
   for(const peer of state.peers.values())closePeer(peer);
   state.peers.clear();try{state.ws?.close()}catch{}state.ws=null;
 }
@@ -49,7 +50,7 @@ function resetLocal(){
   cleanupNetwork();state.connection=null;state.clientId="";state.hostId="";state.isHost=false;state.players.clear();
   state.myVote=null;state.votes.clear();state.voteRound=0;state.candidates=null;state.selectedPlayer=null;state.gameStarted=false;state.phase="home";
 }
-function backHome(){resetLocal();$("leaveBtn").textContent="↻";show("home")}
+function backHome(){resetLocal();showHostOnly(false);$("leaveBtn").textContent="↻";show("home")}
 function currentInvite(){return window.location.href.split("#")[0]+"#room="+encodeURIComponent(state.clientId)}
 function renderLobby(){
   $("roomCode").textContent=state.hostId||state.clientId;
@@ -99,12 +100,12 @@ class NetplaySignal{
     });
   }
   host(){
-    state.isHost=true;state.hostId=state.clientId;
+    state.isHost=true;state.hostId=state.clientId;showHostOnly(true);
     addOrUpdatePlayer({id:state.clientId,name:state.name,isHost:true,ready:true,connected:true});
     renderLobby();show("lobby");
   }
   async join(hostId){
-    state.isHost=false;state.hostId=hostId;
+    state.isHost=false;state.hostId=hostId;showHostOnly(false);
     if(!validRoom(hostId))throw new Error("That room ID is not a valid NetplayJS client ID.");
     setStatus("JOINING ROOM","CONNECTING TO HOST","Negotiating a secure WebRTC data channel…");show("connecting");
     await this.makePeer(hostId,true);
@@ -366,7 +367,7 @@ function toggleReady(){
 }
 async function copyInvite(){try{await navigator.clipboard.writeText(currentInvite());$("copyRoomBtn").textContent="COPIED ✓";setTimeout(()=>$("copyRoomBtn").textContent="COPY INVITE",1400)}catch{$("inviteLink").select?.()}}
 function init(){
-  setMode(true);updatePlayerSlider();
+  setMode(true);showHostOnly(false);updatePlayerSlider();
   $("onlinePlayerCount").addEventListener("input",updatePlayerSlider);
   $("hostModeBtn").addEventListener("click",()=>setMode(true));$("joinModeBtn").addEventListener("click",()=>setMode(false));
   $("createRoomBtn").addEventListener("click",createRoom);$("joinRoomBtn").addEventListener("click",joinRoom);
