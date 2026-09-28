@@ -1,7 +1,7 @@
 (()=>{"use strict";
 const $=id=>document.getElementById(id),screens=["home","connecting","lobby","role","discussion","vote","result","error"];
-const S={peer:null,directoryPeer:null,directoryConn:null,directoryOwner:false,directoryRooms:new Map(),publicRoom:false,hostConn:null,guest:new Map(),id:"",host:"",hostMode:false,name:"",settings:{players:5,category:"mixed",time:90},players:new Map(),roles:{},word:"",role:"",hint:"",phase:"home",timer:0,timerId:null,voteCandidates:null,votes:new Map(),selectedVote:null,voteRound:0,selected:null,game:false};
-const PREFIX="imposter-",DIRECTORY_ID="imposter-public-directory",MAX=20,MIN=3;
+const S={peer:null,publicRoom:false,hostConn:null,guest:new Map(),id:"",host:"",hostMode:false,name:"",settings:{players:5,category:"mixed",time:90},players:new Map(),roles:{},word:"",role:"",hint:"",phase:"home",timer:0,timerId:null,voteCandidates:null,votes:new Map(),selectedVote:null,voteRound:0,selected:null,game:false};
+const PREFIX="imposter-",MAX=20,MIN=3;
 const PEER_OPTIONS={debug:2,config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}],sdpSemantics:"unified-plan"}};
 const CONNECT_TIMEOUT=15000;
 function show(x){screens.forEach(s=>$(s)?.classList.toggle("active",s===x));scrollTo(0,0)}const SUPABASE_URL="https://dkwmkvruzebnqlmvwzhy.supabase.co";
@@ -77,7 +77,7 @@ function slider(){txt("onlinePlayerCountLabel",$("onlinePlayerCount").value)}
 function send(c,m){if(!c?.open)return false;try{c.send(m);return true}catch{return false}}
 function all(m){S.guest.forEach(c=>send(c,m))}
 function stop(){clearInterval(S.timerId);S.timerId=null}
-function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;try{S.directoryConn?.close()}catch{};try{S.directoryPeer?.destroy()}catch{};S.directoryConn=null;S.directoryPeer=null;S.directoryOwner=false}
+function closeAll(){if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.forEach(c=>{try{c.close()}catch{}});S.guest.clear();try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
 function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
 function lobby(){
  txt("roomCode",room(S.host||S.id));txt("inviteLink",S.host?invite():"—");const ps=players();txt("lobbyCount",ps.length+" / "+S.settings.players);$("onlinePlayerList").replaceChildren();
