@@ -73,7 +73,7 @@ function encodeRoomCode(uuid){
 }
 function decodeRoomCode(code){
   try{
-    const clean=String(code||"").trim().replace(/-/g,"").replace(/_/g,"/");
+    const clean=String(code||"").trim().replace(/-/g,"+").replace(/_/g,"/");
     if(!/^[A-Za-z0-9+/]{20,22}$/.test(clean))return "";
     const padded=clean+"=".repeat((4-clean.length%4)%4);
     const binary=atob(padded);
@@ -475,7 +475,7 @@ function createRoom(){
 }
 function joinRoom(){
   const name=normalizeName($("displayName").value),room=parseRoom($("roomInput").value);if(!name){alert("Enter your name first.");$("displayName").focus();return}
-  if(!validRoom(room)){alert("Enter a valid room ID or invite link.");return}
+  if(!validRoom(room)){alert("That room code is invalid or incomplete. Copy the host invite or enter the full 22-character room code.");return}
   state.name=name;setStatus("JOINING","CONNECTING TO ROOM","Registering with the NetplayJS matchmaking service…");show("connecting");
   state.net=new NetplaySignal();state.net.connect().then(()=>state.net.join(room)).catch(e=>setError("Could not join room",e.message));
 }
