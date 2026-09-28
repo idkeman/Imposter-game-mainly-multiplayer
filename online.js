@@ -106,8 +106,27 @@ class NetplaySignal{
       state.ws=this.ws;
       let settled=false;
       this.ws.onopen=()=>{setStatus("NETPLAYJS","CONNECTED TO SIGNALING","Waiting for your player ID…")};
-      this.ws.onerror=()=>{if(!settled){settled=true;reject(new Error("Could not connect to the NetplayJS matchmaking server."))}else setError("Signaling connection lost","The multiplayer signaling service is unavailable. Return home and try again.")};
-      this.ws.onclose=()=>{if(!settled){settled=true;reject(new Error("The NetplayJS signaling connection closed before registration."))}else if(state.gameStarted)setError("Connection lost","The multiplayer signaling connection was closed.");};
+      const registrationTimeout=setTimeout(()=>{
+        if(!settled){
+          settled=true;
+          try{this.ws.close()}catch{}
+          reject(new Error("NetplayJS signaling did not respond within 12 seconds."));
+        }
+      },12000);
+      this.ws.onerror=()=>{
+        if(!settled){
+          settled=true;clearTimeout(registrationTimeout);
+          reject(new Error("Could not connect to the NetplayJS matchmaking server."));
+        }else setError("Signaling connection lost","The multiplayer signaling service is unavailable. Return home and try again.")
+      };
+      this.ws.onclose=()=>{
+        if(!settled){
+          settled=true;clearTimeout(registrationTimeout);
+          reject(new Error("The NetplayJS signaling connection closed before registration."));
+        }else if(state.gameStarted&&state.peers.size===0){
+          setError("Connection lost","The multiplayer signaling connection was closed.");
+        }
+      };
       this.ws.onmessage=event=>{
         let msg;try{msg=JSON.parse(event.data)}catch{return}
         if(msg.kind==="registration-success"){
@@ -255,7 +274,17 @@ function startTimer(seconds){
   state.timerId=setInterval(()=>{state.timerLeft--;renderTimer();if(state.timerLeft<=0){clearInterval(state.timerId);state.timerId=null;if(state.isHost)openVoting()}},1000);
 }
 function renderTimer(){const s=Math.max(0,Math.floor(state.timerLeft));$("onlineTimer").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
-function continueToDiscussion(){show("discussion");$("discussionStatus").textContent=state.isHost?"You're the host. End discussion when everyone has described the word.":"The host controls the discussion timer."}
+function continueToDiscussion(){
+  if(state.isHost&&state.phase==="role"){
+    state.phase="discussion";
+    startTimer(state.settings.time);
+    sendTimerTick();
+  }else{
+    state.phase="discussion";
+  }
+  show("discussion");
+  $("discussionStatus").textContent=state.isHost?"You're the host. End discussion when everyone has described the word.":"The host controls the discussion timer.";
+}
 function openVoting(candidates=null,revote=false){
   if(!state.isHost)return;
   clearInterval(state.timerId);state.timerId=null;state.phase="vote";state.candidates=candidates;state.votes.clear();state.myVote=null;
@@ -407,7 +436,7 @@ function init(){
     $("playAgainBtn").addEventListener("click",()=>{
       if(state.isHost){
         state.gameStarted=false;state.phase="lobby";state.privateRole=null;state.privateWord="";state.privateHint="";
-        state.myVote=null;state.votes.clear();state.voteRound=0;state.selectedPlayer=null;
+        state._roles={};state.timerLeft=0;state.myVote=null;state.votes.clear();state.voteRound=0;state.selectedPlayer=null;
         state.players.forEach(p=>{if(!p.isHost)p.ready=false});
         const host=state.players.get(state.clientId);if(host)host.ready=true;
         broadcastLobby();show("lobby");
