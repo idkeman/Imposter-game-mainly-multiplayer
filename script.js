@@ -21,6 +21,7 @@ weather:expand("Rain|Snow|Wind|Cloud|Fog|Lightning|Thunder|Hurricane|Tornado|Hai
 holidays:expand("Christmas|Halloween|Thanksgiving|Birthday|Easter|Valentine|New Year|Fireworks|Parade|Costume|Gift|Turkey|Pumpkin|Santa|Reindeer|Snowman|Stocking|Ornament|Wreath|Candy|Chocolate|Easter egg|Easter bunny|Party|Cake|Candles|Balloons|Confetti|Graduation|Wedding".split("|"),"Family|Holiday|Annual|Winter|Summer|Spring|Fall|National|Religious|School|Birthday|Festival|Community|Traditional|Special"),
 };
 WORDS.mixed=[...new Set(Object.keys(WORDS).filter(k=>k!=="mixed").flatMap(k=>WORDS[k]))];
+window.IMPOSTER_WORDS=WORDS;
 
 const $ = id => document.getElementById(id);
 
@@ -109,6 +110,7 @@ function hintFor(word) {
   const text = String(word || "").toLowerCase();
   return hints[text] || hints[text.split(" ").pop()] || "General";
 }
+window.IMPOSTER_HINT_FOR=hintFor;
 
 function shuffle(a) {
   for (let i=a.length-1;i>0;i--) {
@@ -285,6 +287,7 @@ function bindGame() {
 }
 
 function boot() {
+  if (!el("playerCount") || !el("startBtn")) return;
   try { bindGame(); }
   catch(e) {
     console.error("Imposter startup failed:",e);
