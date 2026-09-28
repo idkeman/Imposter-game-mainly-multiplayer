@@ -1,3 +1,4 @@
+(function(){
 const expand=(words,tags)=>{const tagList=Array.isArray(tags)?tags:String(tags).split("|").map(x=>x.trim()).filter(Boolean);return [...new Set([...words,...tagList.flatMap(t=>words.map(w=>t+" "+w))])].slice(0,205)};
 const WORDS={
 food:expand("Pizza|Sushi|Pancake|Popcorn|Hamburger|Taco|Spaghetti|Donut|Pretzel|Pineapple|Apple|Banana|Orange|Strawberry|Blueberry|Grape|Cherry|Peach|Pear|Mango|Coconut|Avocado|Tomato|Potato|Carrot|Broccoli|Cheese|Bacon|Chicken|Steak".split("|"),"Fresh|Spicy|Sweet|Savory|Crispy|Grilled|Baked|Fried|Frozen|Homemade|Cheesy|Chocolate|Fruit|Classic|Mini"),
@@ -306,3 +307,5 @@ if(document.readyState==="loading") {
 } else {
   boot();
 }
+
+})();
