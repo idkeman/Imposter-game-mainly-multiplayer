@@ -43,8 +43,7 @@ function renderPlayerNameInputs(count) {
   if(!container)return;
   const previous=[...state.playerNames];
   state.playerNames=Array.from({length:count},(_,i)=>{
-    const saved=String(previous[i]||"").trim();
-    return saved||"Player "+(i+1);
+    return String(previous[i]||"");
   });
   container.replaceChildren();
   for(let i=0;i<count;i++){
@@ -62,6 +61,8 @@ function renderPlayerNameInputs(count) {
     input.value=state.playerNames[i];
     input.addEventListener("input",()=>{
       state.playerNames[i]=input.value;
+      const error=el("nameError");
+      if(error)error.textContent="";
     });
     wrap.appendChild(label);
     wrap.appendChild(input);
@@ -123,10 +124,25 @@ function startGame() {
 
   updatePlayerCount();
   state.players=Math.max(3,Math.min(20,Number(slider.value)||5));
-  state.playerNames=Array.from({length:state.players},(_,i)=>{
-    const value=String(state.playerNames[i]||"").trim();
-    return value||"Player "+(i+1);
-  });
+  const names=Array.from({length:state.players},(_,i)=>String(state.playerNames[i]||"").trim());
+  const error=el("nameError");
+  if(names.some(name=>!name)){
+    if(error)error.textContent="Enter a name for every player before starting.";
+    const firstEmpty=names.findIndex(name=>!name);
+    const firstInput=el("playerName"+firstEmpty);
+    if(firstInput)firstInput.focus();
+    return;
+  }
+  const normalized=names.map(name=>name.toLowerCase());
+  const duplicates=new Set(normalized.filter((name,i)=>normalized.indexOf(name)!==i));
+  if(duplicates.size){
+    if(error)error.textContent="Each player needs a different name.";
+    const duplicateIndex=normalized.findIndex((name,i)=>normalized.indexOf(name)!==i);
+    const duplicateInput=el("playerName"+duplicateIndex);
+    if(duplicateInput)duplicateInput.focus();
+    return;
+  }
+  state.playerNames=names;
   state.category=category.value||"mixed";
   state.time=Math.max(10,Number(roundTime.value)||90);
   state.timeLeft=state.time;
