@@ -116,8 +116,30 @@ async function openRoomChannel(hostId){
  if(!supabaseClient)throw new Error("The room service did not load.");
  const topic="imposter-room:"+String(hostId).toLowerCase();
  const ch=supabaseClient.channel(topic,{config:{private:true,broadcast:{self:false,ack:true}}});
- ch.on("broadcast",{event:"game"},({payload})=>{if(!payload||payload.to&&payload.to!==S.id)return;if(S.hostMode)hostMsg({peer:payload.from},payload);else guestMsg(payload)});
- await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Room server connection timed out.")),CONNECT_TIMEOUT);ch.subscribe((status,err)=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve()}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){clearTimeout(timer);console.warn("[Imposter] Realtime subscribe failed",status,err);reject(new Error(err?.message||("Realtime channel status: "+status)))}})});
+ ch.on("broadcast",{event:"game"},({payload})=>{
+  if(!payload||payload.to&&payload.to!==S.id)return;
+  if(S.hostMode)hostMsg({peer:payload.from},payload);else guestMsg(payload)
+ });
+ ch.on("system",{},payload=>console.warn("[Imposter] Realtime system event",payload));
+ await new Promise((resolve,reject)=>{
+  let settled=false;
+  const timer=setTimeout(()=>{if(!settled){settled=true;reject(new Error("Room server connection timed out."))}},CONNECT_TIMEOUT);
+  ch.subscribe((status,err)=>{
+   if(status==="SUBSCRIBED"){
+    if(!settled){settled=true;clearTimeout(timer);resolve()}
+    return
+   }
+   if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){
+    if(!settled){settled=true;clearTimeout(timer);console.warn("[Imposter] Realtime subscribe failed",status,err);reject(new Error(err?.message||("Realtime channel status: "+status)))}
+    return
+   }
+   if(status==="CLOSED"&&settled&&S.roomChannel===ch){
+    console.warn("[Imposter] Realtime room channel closed");
+    S.roomChannel=null;
+    if(S.phase!=="home"&&S.phase!=="finished")error("Connection interrupted","The multiplayer connection closed. Refresh the room and rejoin.");
+   }
+  })
+ });
  S.roomChannel=ch;return ch;
 }
 async function connectHost(){try{const id=PREFIX+code().toLowerCase();S.id=S.host=id;S.hostMode=true;status("CONNECTED","CREATING ROOM","Opening the room connection…");await openRoomChannel(id);S.players.set(id,{id,name:S.name,isHost:true,ready:true,connected:true});hostOnly(true);lobby();show("lobby")}catch(e){console.warn("[Imposter] host room error",e);error("Could not create room",e.message||"The room service could not be reached.")}}
