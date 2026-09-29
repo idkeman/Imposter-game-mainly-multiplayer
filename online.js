@@ -74,9 +74,22 @@ function txt(id,v){const e=$(id);if(e)e.textContent=v}
 function mode(host){$("hostModeBtn").classList.toggle("active",host);$("joinModeBtn").classList.toggle("active",!host);$("hostSetup").classList.toggle("hidden",!host);$("joinSetup").classList.toggle("hidden",host)}
 function hostOnly(v){document.querySelectorAll(".host-only").forEach(e=>e.classList.toggle("hidden",!v))}
 function slider(){txt("onlinePlayerCountLabel",$("onlinePlayerCount").value)}
-function send(c,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:c?.peer||m?.to||null}});return true}catch{return false}}
-function sendTo(id,m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:id}});return true}catch{return false}}
-function all(m){try{if(!S.roomChannel)return false;S.roomChannel.send({type:"broadcast",event:"game",payload:{...m,from:S.id,to:null}});return true}catch{return false}}
+function broadcast(payload){
+  if(!S.roomChannel)return false;
+  try{
+    const p=S.roomChannel.send({type:"broadcast",event:"game",payload});
+    if(p&&typeof p.then==="function")p.then(status=>{
+      if(status==="error")console.warn("[Imposter] Realtime broadcast rejected",payload.type)
+    }).catch(err=>console.warn("[Imposter] Realtime broadcast failed",err));
+    return true
+  }catch(err){
+    console.warn("[Imposter] Realtime broadcast threw",err);
+    return false
+  }
+}
+function send(c,m){return broadcast({...m,from:S.id,to:c?.peer||m?.to||null})}
+function sendTo(id,m){return broadcast({...m,from:S.id,to:id})}
+function all(m){return broadcast({...m,from:S.id,to:null})}
 function stop(){clearInterval(S.timerId);S.timerId=null}
 function closeAll(){clearInterval(helloRetryId);helloRetryId=null;if(S.publicRoom&&S.host)directoryUnregister();stop();S.guest.clear();try{if(S.roomChannel&&supabaseClient)supabaseClient.removeChannel(S.roomChannel)}catch{};S.roomChannel=null;try{S.hostConn?.close()}catch{};S.hostConn=null;try{S.peer?.destroy()}catch{};S.peer=null;}
 function home(){closeAll();S.id=S.host="";S.hostMode=false;S.players.clear();S.game=false;S.phase="home";hostOnly(false);mode(true);show("home")}
